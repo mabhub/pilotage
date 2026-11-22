@@ -405,6 +405,34 @@ test('reprise does not rewrite the project index', t => {
   assert.ok(fs.readFileSync(index).equals(before), 'project index rewritten');
 });
 
+test('reprise caps git status', t => {
+  const s = sandbox(t);
+  assert.equal(s.run(['init', '--chantier', 'demo']).status, 0);
+  // 2 000 untracked files with long names: tens of kilobytes of status on their own.
+  const many = path.join(s.project, 'many');
+  fs.mkdirSync(many);
+  s.git('config', 'status.showUntrackedFiles', 'all');
+  Array.from({ length: 2000 }, (_, i) => fs.writeFileSync(path.join(many, `${'fichier-non-suivi-'.repeat(2)}${i}.txt`), ''));
+  const res = s.run(['reprise', 'demo']);
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(res.stdout.length < 30_000, `${res.stdout.length} characters`);
+  assert.ok(res.stdout.includes('\n… +1960 autre(s) fichier(s), voir git status\n'), res.stdout.slice(-500));
+});
+
+test('reprise keeps the head of the plan when other blocks overflow', t => {
+  const s = sandbox(t);
+  assert.equal(s.run(['init', '--chantier', 'demo']).status, 0);
+  const dir = path.join(s.pilotage, 'demo');
+  fs.appendFileSync(path.join(dir, 'plan.md'), `\n## Notes\n\n${'- une ligne de plan assez longue pour peser\n'.repeat(300)}`);
+  Array.from({ length: 800 }, (_, i) => fs.writeFileSync(path.join(dir, `complement-au-nom-assez-long-${i}.md`), ''));
+  const res = s.run(['reprise', 'demo']);
+  assert.equal(res.status, 0, res.stderr);
+  const plan = res.stdout.slice(res.stdout.indexOf('=== demo/plan.md ==='), res.stdout.indexOf('[… plan.md coupé ici'));
+  assert.ok(res.stdout.includes('[… plan.md coupé ici'), 'plan cut');
+  assert.ok(plan.length >= 2_000, `${plan.length} characters of plan kept`);
+  assert.ok(plan.includes('## Où on en est'), 'plan head kept');
+});
+
 test('unborn project HEAD keeps the standard display', t => {
   const s = sandbox(t, { commit: false });
   assert.equal(s.run(['init', '--git', '--chantier', 'demo']).status, 0);

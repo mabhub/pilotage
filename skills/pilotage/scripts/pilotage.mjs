@@ -60,6 +60,7 @@ const git = (args, cwd) => {
       cwd,
       env: READ_ONLY_GIT_ENV,
       encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
   } catch {
@@ -461,6 +462,21 @@ const indexFor = (text, slug) => {
 // Claude Code keeps a Bash output above ~30 KB out of the conversation and shows only a 2 KB preview,
 // so the agent has to read the whole saved file in a second call. `reprise` stays below, with a margin.
 const OUTPUT_BUDGET = 25_000;
+// git status lines shown by `reprise`; the rest is counted. The plan always keeps its head.
+const STATUS_LINES = 40;
+const PLAN_FLOOR = 2_000;
+
+/**
+ * Caps `git status --short --branch` to its branch line and STATUS_LINES files.
+ * @param {string|null} status - git output, null when git failed
+ * @returns {string} status block body
+ */
+const cappedStatus = status => {
+  if (status === null) return '(git status a échoué)';
+  const [branch, ...files] = status.split('\n');
+  const rest = files.length - STATUS_LINES;
+  return [branch, ...files.slice(0, STATUS_LINES), ...(rest > 0 ? [`… +${rest} autre(s) fichier(s), voir git status`] : [])].join('\n');
+};
 
 /**
  * Cuts a plan at a line boundary so that it fits `keep` characters, with a pointer to the rest.
@@ -553,9 +569,9 @@ const cmdReprise = ({ flags, positional }) => {
   if (inGit) {
     const ledgers = superpowersLedgers(root);
     if (ledgers.length > 0) blocks.push(`=== registres superpowers en cours (non affichés) ===\n${ledgers.join('\n')}\n`);
-    const status = git(['status', '--short', '--branch'], root);
+    const status = cappedStatus(git(['status', '--short', '--branch'], root));
     const link = projectLink({ base, root, inGit, slug });
-    const log = link ? link.join('\n') : git(['log', '--oneline', '-8'], root);
+    const log = link ? link.join('\n') : git(['log', '--oneline', '-8'], root) ?? '(git log a échoué)';
     blocks.push(`=== git ===\n${status}\n\n${log}`);
   }
 
@@ -568,8 +584,9 @@ const cmdReprise = ({ flags, positional }) => {
       .find(n => sizeOf(withBlock(blocks, journalAt, journalBlock(n))) <= OUTPUT_BUDGET) ?? 1;
   const shrunk = journalAt < 0 ? blocks : withBlock(blocks, journalAt, journalBlock(entries));
   const overflow = sizeOf(shrunk) - OUTPUT_BUDGET;
-  const fitted = overflow > 0 && planAt >= 0
-    ? withBlock(shrunk, planAt, `${planHeader}${cutPlan({ planText, rawText: rawPlan, keep: planText.length - overflow - 300, slug })}\n`)
+  const keep = planAt < 0 ? 0 : Math.max(planText.length - overflow - 300, PLAN_FLOOR);
+  const fitted = overflow > 0 && planAt >= 0 && keep < planText.length
+    ? withBlock(shrunk, planAt, `${planHeader}${cutPlan({ planText, rawText: rawPlan, keep, slug })}\n`)
     : shrunk;
 
   const reductions = [
