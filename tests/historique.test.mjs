@@ -388,6 +388,23 @@ test('reprise keeps git log -8 without a link', t => {
   assert.match(res.stdout, /=== git ===\n## main\n\n[0-9a-f]{7,} initial$/m);
 });
 
+test('reprise does not rewrite the project index', t => {
+  const s = sandbox(t);
+  assert.equal(s.run(['init', '--chantier', 'demo']).status, 0);
+  const file = path.join(s.project, 'f.txt');
+  fs.writeFileSync(file, 'x\n');
+  s.git('add', 'f.txt');
+  // Same content, other mtime: the index entry is stale and a plain git status would refresh it.
+  const past = new Date(Date.now() - 3600_000);
+  fs.utimesSync(file, past, past);
+  const index = path.join(s.project, '.git', 'index');
+  const before = fs.readFileSync(index);
+  const res = s.run(['reprise', 'demo']);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^A  f\.txt$/m);
+  assert.ok(fs.readFileSync(index).equals(before), 'project index rewritten');
+});
+
 test('unborn project HEAD keeps the standard display', t => {
   const s = sandbox(t, { commit: false });
   assert.equal(s.run(['init', '--git', '--chantier', 'demo']).status, 0);

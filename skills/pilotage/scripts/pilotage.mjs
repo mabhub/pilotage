@@ -45,6 +45,9 @@ const EXCLUDE_LINE = `/${DIR_NAME}/`;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SESSION_RE = /^[A-Za-z0-9-]{1,128}$/;
 
+// Read-only on the project: no optional index refresh by `git status`, no index.lock race.
+const READ_ONLY_GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
+
 /**
  * Runs a git command and returns trimmed stdout, or null outside a repository / on failure.
  * @param {string[]} args - git arguments
@@ -53,7 +56,12 @@ const SESSION_RE = /^[A-Za-z0-9-]{1,128}$/;
  */
 const git = (args, cwd) => {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', args, {
+      cwd,
+      env: READ_ONLY_GIT_ENV,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
   } catch {
     return null;
   }
