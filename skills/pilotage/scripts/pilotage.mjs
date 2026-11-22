@@ -125,15 +125,14 @@ const localDate = (date = new Date()) => [
 const today = () => localDate();
 
 /**
- * Fills a template from assets/ with {{KEY}} placeholders.
+ * Fills a template from assets/ with {{KEY}} placeholders, in one pass: values are inserted
+ * verbatim (no `$&` or `$'` replacement patterns) and never scanned for placeholders themselves.
  * @param {string} name - template file name
- * @param {Object<string,string>} values - placeholder values
+ * @param {Object<string,string|number>} values - placeholder values
  * @returns {string} rendered text
  */
-const render = (name, values) => Object.entries(values).reduce(
-  (text, [key, value]) => text.replaceAll(`{{${key}}}`, value),
-  fs.readFileSync(path.join(ASSETS, name), 'utf8'),
-);
+const render = (name, values) => fs.readFileSync(path.join(ASSETS, name), 'utf8')
+  .replace(/\{\{([A-Z]+)\}\}/g, (match, key) => (Object.hasOwn(values, key) ? String(values[key]) : match));
 
 /**
  * Writes a file only if it does not exist yet.
