@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Tests of the optional git history of .pilotage/ (pilotage.mjs + historique.mjs).
  * Every test runs in a throwaway folder with its own git config: the user's config,
  * identity and repositories are never touched.
- * Run from the repository root: node --test pilotage/scripts/*.test.mjs
+ * Run from the repository root: node --test
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pilotage.mjs');
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'pilotage', 'scripts', 'pilotage.mjs');
 const PROPOSAL = 'Historique git possible : init --git (voir references/historique.md)';
 // No GIT_* variable (GIT_DIR, GIT_AUTHOR_*…) nor EMAIL leaks from the developer's shell.
 const CLEAN_ENV = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(GIT_|EMAIL$)/.test(key)));

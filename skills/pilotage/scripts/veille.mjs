@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * veille — wakes Claude shortly before the prompt cache expires, for a quick checkpoint.
  * Wired as two Claude Code hooks (see references/veille.md):

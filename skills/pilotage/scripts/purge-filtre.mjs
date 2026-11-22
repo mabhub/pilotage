@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * purge-filtre — tree filter run by `git filter-branch` during `pilotage.mjs purge`.
  *

@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Tests of `pilotage.mjs scan`: every test builds a throwaway tree of projects; nothing outside it is read.
- * Run from the repository root: node --test pilotage/scripts/*.test.mjs
+ * Run from the repository root: node --test
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pilotage.mjs');
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'pilotage', 'scripts', 'pilotage.mjs');
 
 /**
  * Date N days before today, as YYYY-MM-DD.

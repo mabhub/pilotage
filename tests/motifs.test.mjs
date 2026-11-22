@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Tests of the purge patterns (motifs.mjs).
- * Run from the repository root: node --test pilotage/scripts/*.test.mjs
+ * Run from the repository root: node --test
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPLACEMENT, containsAny, decodeFile, parsePatterns, redact } from './motifs.mjs';
+import { REPLACEMENT, containsAny, decodeFile, parsePatterns, redact } from '../skills/pilotage/scripts/motifs.mjs';
 
 test('literal and regex lines', () => {
   const [literal] = parsePatterns('abc.def\n');

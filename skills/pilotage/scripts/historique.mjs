@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * historique — optional git history of the .pilotage/ folder (nested repository .pilotage/.git).
  *
