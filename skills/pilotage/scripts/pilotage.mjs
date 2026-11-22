@@ -583,7 +583,8 @@ const cmdReprise = ({ flags, positional }) => {
     const status = cappedStatus(git(['status', '--short', '--branch'], root));
     const link = projectLink({ base, root, inGit, slug });
     const log = link ? link.join('\n') : git(['log', '--oneline', '-8'], root) ?? '(git log a échoué)';
-    blocks.push(`=== git ===\n${status}\n\n${log}`);
+    // Commit messages may come from third parties: no escape sequence reaches the output.
+    blocks.push(printable(`=== git ===\n${status}\n\n${log}`));
   }
 
   // Each block is printed by its own console.log, hence the +1 for its newline.
@@ -913,8 +914,8 @@ const readTextSafe = file => {
   }
 };
 
-// C0 and C1 control characters except the line feed. `scan` prints text read from other projects, possibly
-// cloned from a third party: an escape sequence in an index line must not reach the user's terminal.
+// C0 and C1 control characters except the line feed. `scan` prints text read from other projects, and
+// `reprise` commit messages, both possibly from a third party: no escape sequence must reach the output.
 const CONTROL_RE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
 const printable = text => text.replace(CONTROL_RE, '');
 

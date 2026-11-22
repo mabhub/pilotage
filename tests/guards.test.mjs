@@ -179,6 +179,16 @@ test('reprise cuts the plan at a line and points to that line of the file on dis
   assert.ok(Number(line) > shown.length + 1, 'comments shift the numbering');
 });
 
+test('reprise strips control characters from the commits it prints', t => {
+  const s = sandbox(t);
+  assert.equal(s.run(['init', '--chantier', 'demo']).status, 0);
+  s.git(['commit', '-q', '--allow-empty', '-m', 'sujet \x1b]52;c;ZXZpbA==\x07 fin \x1b[2J']);
+  const res = s.run(['reprise', 'demo']);
+  assert.equal(res.status, 0, res.stderr);
+  assert.doesNotMatch(res.stdout, /\x1b|\x07/);
+  assert.match(res.stdout, /sujet \]52;c;ZXZpbA== fin \[2J/);
+});
+
 // --- veille.mjs ----------------------------------------------------------------------------
 
 const SESSION = '0123abcd-0000-4000-8000-000000000000';
