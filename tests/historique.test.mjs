@@ -109,6 +109,18 @@ test('init --git on an existing .pilotage commits everything', t => {
   assert.ok(files.includes('demo/journal.md'), files.join(', '));
 });
 
+test('init --git works with a git template that has no info folder', t => {
+  const s = sandbox(t);
+  const template = path.join(s.tmp, 'template');
+  fs.mkdirSync(path.join(template, 'hooks'), { recursive: true });
+  const res = s.run(['init', '--git', '--chantier', 'demo'], { GIT_TEMPLATE_DIR: template });
+  assert.equal(res.status, 0, res.stderr);
+  const exclude = fs.readFileSync(path.join(s.pilotage, '.git', 'info', 'exclude'), 'utf8');
+  assert.match(exclude, /^\/veille\.log$/m);
+  assert.match(exclude, /^\/\.git-rewrite\/$/m);
+  assert.equal(s.miniGit('status', '--porcelain'), '');
+});
+
 test('init --git twice says already active', t => {
   const s = sandbox(t);
   assert.equal(s.run(['init', '--git']).status, 0);

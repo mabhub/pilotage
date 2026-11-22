@@ -130,7 +130,10 @@ export const initHistory = ({ base, root, inGit }) => {
   const init = runGit(['init', '-q', base], { cwd: base });
   if (!init.ok) throw new HistoryError(`ERREUR : git init a échoué (${init.stderr.split('\n')[0]}).`);
   // .git-rewrite: filter-branch's temporary checkout (purge); a leftover may hold a secret.
-  fs.appendFileSync(path.join(base, '.git', 'info', 'exclude'), '\n/veille.log\n/.git-rewrite/\n');
+  // A git template without info/ (init.templateDir, GIT_TEMPLATE_DIR) leaves it missing.
+  const infoDir = path.join(base, '.git', 'info');
+  fs.mkdirSync(infoDir, { recursive: true });
+  fs.appendFileSync(path.join(infoDir, 'exclude'), '\n/veille.log\n/.git-rewrite/\n');
   const sha = commitAll(base, 'État initial', projectTrailers(root, inGit));
   const count = runGit(['ls-files'], { base }).stdout.split('\n').filter(Boolean).length;
   return [`Historique git activé : ${count} fichier(s) commité(s) · ${sha}`];
