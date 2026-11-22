@@ -16,10 +16,13 @@
  *                                                defaults to $CLAUDE_CODE_SESSION_ID)
  *   point <slug>                                 history on: commit .pilotage/ at the end of a checkpoint
  *   purge --motifs <fichier>                     history on: replace the patterns (secrets) in the whole history
+ *   scan [<dossier>] [--profondeur N] [--clos]   list the chantiers of every project found below a folder (read-only:
+ *                                                INDEX.md, chantier folder names, « En attente » of plan.md)
  *
  * History on (.pilotage/.git): `contexte` and `reprise` first commit pending changes (catch-up).
  *
  * Only `contexte` depends on Claude Code; every other subcommand works with any coding agent.
+ * `scan` is the only one that runs from any folder rather than from a project root.
  *
  * Output is French (user-facing). Transcript content is never printed: `contexte` reads only
  * types, timestamps and token counts.
@@ -28,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { styleText } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   HistoryError, catchUp, commitPoint, gitAvailable, historyActive, initHistory, projectLink, purgeHistory,
@@ -82,7 +86,7 @@ const chantierDir = (root, slug) => {
  * @param {Set<string>} [booleans] - flags that take no value (they are set to 'true')
  * @returns {{flags: Object<string,string>, positional: string[]}} parsed arguments
  */
-const parseArgs = (argv, booleans = new Set(['git'])) => argv.reduce(
+const parseArgs = (argv, booleans = new Set(['git', 'clos'])) => argv.reduce(
   (acc, arg, i, all) => {
     if (acc.skip) return { ...acc, skip: false };
     if (arg.startsWith('--') && booleans.has(arg.slice(2))) {
@@ -787,7 +791,263 @@ const cmdPurge = ({ flags }) => {
   withHistoryErrors(() => purgeHistory({ base, patternsFile: flags.motifs }).forEach(line => console.log(line)));
 };
 
+// `scan` never descends into these: dependencies and virtual environments hold no project of their own
+// and can be huge. Hidden directories are skipped too (.git, .venv…), `.pilotage` itself included.
+const SCAN_SKIP = new Set(['node_modules', 'vendor', 'venv', '__pycache__']);
+const SCAN_DEFAULT_DEPTH = 4;
+const SCAN_MAX_DEPTH = 10;
+// An active chantier without checkpoint for longer than this is flagged as dormant.
+const DORMANT_DAYS = 30;
+const SCAN_TEXT_MAX = 200;
+// Chantiers updated within this many days are shown as fresh (green) in a terminal.
+const FRESH_DAYS = 7;
+
+/**
+ * Directory entries, or null when the directory cannot be read (permissions, vanished).
+ * @param {string} dir - directory
+ * @returns {fs.Dirent[]|null} entries or null
+ */
+const readDirSafe = dir => {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Text content of a file, or null when it cannot be read (permissions, vanished, not a file).
+ * @param {string} file - file path
+ * @returns {string|null} content or null
+ */
+const readTextSafe = file => {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+// C0 and C1 control characters except the line feed. `scan` prints text read from other projects, possibly
+// cloned from a third party: an escape sequence in an index line must not reach the user's terminal.
+const CONTROL_RE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
+const printable = text => text.replace(CONTROL_RE, '');
+
+/**
+ * Walks a tree for project folders holding `.pilotage/INDEX.md`. The walk never follows a symbolic link
+ * (a Dirent for a link is not a directory), so a linked project is neither listed twice nor escaped to;
+ * a `.pilotage` that is itself a link (synced folder) is still read, as `reprise` does.
+ * @param {string} dir - directory to scan
+ * @param {number} depth - depth of `dir` below the scan root
+ * @param {number} maxDepth - deepest level where a project is looked for
+ * @returns {{projects: string[], unreadable: number}} project directories and unreadable directory count
+ */
+const findProjects = (dir, depth, maxDepth) => {
+  const entries = readDirSafe(dir);
+  if (entries === null) return { projects: [], unreadable: 1 };
+  const own = fs.existsSync(path.join(dir, DIR_NAME, 'INDEX.md')) ? [dir] : [];
+  const children = depth < maxDepth
+    ? entries.filter(entry => entry.isDirectory() && !entry.name.startsWith('.') && !SCAN_SKIP.has(entry.name))
+      .map(entry => findProjects(path.join(dir, entry.name), depth + 1, maxDepth))
+    : [];
+  return children.reduce(
+    (acc, child) => ({ projects: [...acc.projects, ...child.projects], unreadable: acc.unreadable + child.unreadable }),
+    { projects: own, unreadable: 0 },
+  );
+};
+
+const INDEX_LINE_RE = /^- \[([^\]]+)\]\(([^)]*)\)\s*(?:—\s*)?(.*)$/;
+const INDEX_DATE_RE = /\s*·\s*(?:maj|clos)\s+(\d{4}-\d{2}-\d{2})/;
+
+/**
+ * Sections of an INDEX.md: chantier lines (`- [slug](lien) — texte · maj AAAA-MM-JJ`) and the count of
+ * all bullet lines, so that free-form sections (« À suivre ») are counted too. Template comments are ignored,
+ * control characters removed.
+ * @param {string} text - INDEX.md content
+ * @returns {Array<{title: string, bullets: number, entries: Array<{slug: string, text: string, date: string|null}>}>} sections
+ */
+const parseIndex = text => stripComments(printable(text)).split(/^(?=## )/m)
+  .filter(block => block.startsWith('## '))
+  .map(block => {
+    const [title, ...body] = block.split('\n');
+    const entries = body.map(line => line.match(INDEX_LINE_RE)).filter(Boolean).map(([, slug, , rest]) => {
+      const date = rest.match(INDEX_DATE_RE);
+      return { slug, text: (date ? rest.replace(date[0], '') : rest).trim(), date: date?.[1] ?? null };
+    });
+    return { title: title.slice(3).trim(), bullets: body.filter(line => line.startsWith('- ')).length, entries };
+  });
+
+const PENDING_RE = /\[(?:question|attente)(?:\s+([QA]\d+))?\]/g;
+const LAST_POINT_RE = /\*\*Dernier point d'étape\*\*\s*:\s*(\d{4}-\d{2}-\d{2})/;
+
+/**
+ * What `scan` reads from a plan.md: the last checkpoint date and the questions and actions waiting for
+ * the user (« En attente » section only; ids, or null for an item written without id).
+ * @param {string} planFile - plan.md path
+ * @returns {{lastPoint: string|null, pending: Array<string|null>}} plan summary
+ */
+const planSummary = planFile => {
+  const raw = readTextSafe(planFile);
+  if (raw === null) return { lastPoint: null, pending: [] };
+  const text = stripComments(raw);
+  const section = text.split(/^(?=## )/m).find(block => block.startsWith('## En attente'));
+  return {
+    lastPoint: text.match(LAST_POINT_RE)?.[1] ?? null,
+    pending: section ? [...section.matchAll(PENDING_RE)].map(([, id]) => id ?? null) : [],
+  };
+};
+
+/**
+ * Days elapsed since a date (YYYY-MM-DD), counted in whole days from today.
+ * @param {string} date - ISO date
+ * @returns {number} days
+ */
+const daysSince = date => Math.round((Date.parse(today()) - Date.parse(date)) / 86_400_000);
+
+/**
+ * Everything `scan` needs from one project: index entries, pending ids of active chantiers, anomalies.
+ * Only INDEX.md, the chantier folder names, and the last checkpoint date and « En attente » section of
+ * plan.md are read. An index line without `maj` falls back on the plan's last checkpoint date.
+ * @param {string} dir - project directory
+ * @param {string} name - project name shown (path relative to the scan root)
+ * @returns {object|null} project summary, or null when INDEX.md cannot be read
+ */
+const scanProject = (dir, name) => {
+  const base = path.join(dir, DIR_NAME);
+  const index = readTextSafe(path.join(base, 'INDEX.md'));
+  if (index === null) return null;
+  const sections = parseIndex(index);
+  const entriesOf = title => sections.filter(section => section.title === title).flatMap(({ entries }) => entries);
+  const planOf = slug => (SLUG_RE.test(slug) ? path.join(base, slug, 'plan.md') : null);
+  const active = entriesOf('Actifs').map(entry => {
+    const { lastPoint, pending } = planOf(entry.slug) ? planSummary(planOf(entry.slug)) : { lastPoint: null, pending: [] };
+    return { ...entry, project: name, date: entry.date ?? lastPoint, pending };
+  });
+  const indexed = new Set(sections.flatMap(({ entries }) => entries.map(({ slug }) => slug)));
+  const unindexed = (readDirSafe(base) ?? [])
+    .filter(entry => entry.isDirectory() && SLUG_RE.test(entry.name) && !indexed.has(entry.name))
+    .filter(entry => fs.existsSync(path.join(base, entry.name, 'plan.md')))
+    .map(entry => `${name} : chantier « ${entry.name} » absent de INDEX.md`);
+  const missing = active.filter(({ slug }) => !planOf(slug) || !fs.existsSync(planOf(slug)))
+    .map(({ slug }) => `${name} : « ${slug} » actif sans ${DIR_NAME}/${slug}/plan.md`);
+  return {
+    name,
+    active,
+    closed: entriesOf('Clos').map(entry => ({ ...entry, project: name })),
+    otherSections: sections.filter(({ title, bullets }) => title !== 'Actifs' && title !== 'Clos' && bullets > 0)
+      .map(({ title, bullets }) => `${title} ${bullets}`),
+    anomalies: [...missing, ...unindexed],
+  };
+};
+
+/**
+ * Shortens a free-text index entry.
+ * @param {string} text - entry text
+ * @param {number} max - maximum length
+ * @returns {string} text, cut with an ellipsis when too long
+ */
+const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/**
+ * Longest description line: the terminal width in a terminal, so that every entry keeps its two-line
+ * rhythm instead of wrapping; SCAN_TEXT_MAX otherwise.
+ * @returns {number} maximum length
+ */
+const scanTextMax = () => (process.stdout.isTTY && process.stdout.columns
+  ? Math.max(40, process.stdout.columns - 3)
+  : SCAN_TEXT_MAX);
+
+/** Most recent first; undated entries last, then by project and slug. */
+const byDateDesc = (a, b) => (b.date ?? '').localeCompare(a.date ?? '')
+  || a.project.localeCompare(b.project) || a.slug.localeCompare(b.slug);
+
+/**
+ * One active chantier on two lines: where and how fresh, then what it is about.
+ * Styles only apply in a terminal: styleText drops them when stdout is piped or redirected (an agent's
+ * call), and honours NO_COLOR / FORCE_COLOR. Every head line keeps the same anchors (bold project, coloured
+ * chantier) so that heads stay distinct from descriptions; the age shows only in the date's colour.
+ * No dim style: some terminals do not render it, and a dimmed line then loses every anchor.
+ * @param {object} entry - active entry from scanProject
+ * @param {number} textMax - longest description line
+ * @returns {string} formatted lines
+ */
+const formatActive = ({ project, slug, date, text, pending }, textMax) => {
+  const age = date ? daysSince(date) : null;
+  const dormant = age > DORMANT_DAYS;
+  const when = date ? `maj ${date} (${age} j${dormant ? ', dormant' : ''})` : 'sans date';
+  const ids = pending.filter(Boolean);
+  const anonymous = pending.length - ids.length;
+  const waiting = pending.length > 0
+    ? ` · ${styleText('yellow', `attend : ${[...ids, ...(anonymous > 0 ? [`${anonymous} sans id`] : [])].join(', ')}`)}`
+    : '';
+  const fresh = age !== null && age <= FRESH_DAYS;
+  const shownWhen = fresh ? styleText('green', when) : dormant ? styleText('magenta', when) : when;
+  return `${styleText('bold', project)} · ${styleText('cyan', slug)} · ${shownWhen}${waiting}\n  ${clip(text, textMax)}`;
+};
+
+/**
+ * Section title of the scan output, bold in a terminal.
+ * @param {string} title - title text
+ * @returns {string} styled title line
+ */
+const scanTitle = title => styleText('bold', `=== ${title} ===`);
+
+/**
+ * `scan [<racine>] [--profondeur N] [--clos]`: list the chantiers of every project found below a folder.
+ * Read-only; meant to be run by the user in a terminal as well as by an agent. Output is capped at
+ * OUTPUT_BUDGET characters, except in a terminal.
+ * @param {{flags: Object<string,string>, positional: string[]}} args - parsed arguments
+ */
+const cmdScan = ({ flags, positional }) => {
+  const root = path.resolve(positional[0] ?? process.cwd());
+  const depth = flags.profondeur === undefined ? SCAN_DEFAULT_DEPTH : Number(flags.profondeur);
+  if (!Number.isInteger(depth) || depth < 0 || depth > SCAN_MAX_DEPTH || !fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
+    console.error(`Usage : scan [<dossier>] [--profondeur 0-${SCAN_MAX_DEPTH}] [--clos]`);
+    process.exit(1);
+  }
+  const { projects: dirs, unreadable: unreadableDirs } = findProjects(root, 0, depth);
+  const scanned = dirs.toSorted().map(dir => scanProject(dir, printable(path.relative(root, dir) || path.basename(root))));
+  const projects = scanned.filter(Boolean);
+  const unreadable = unreadableDirs + scanned.length - projects.length;
+  const active = projects.flatMap(({ active: list }) => list).toSorted(byDateDesc);
+  const idle = projects.filter(({ active: list }) => list.length === 0).map(({ name }) => name);
+  const others = projects.filter(({ otherSections }) => otherSections.length > 0)
+    .map(({ name, otherSections }) => `${name} : ${otherSections.join(' · ')}`);
+  const anomalies = projects.flatMap(({ anomalies: list }) => list);
+  const closed = projects.flatMap(({ closed: list }) => list).toSorted(byDateDesc);
+  const shownRoot = root.replace(os.homedir(), '~');
+  const textMax = scanTextMax();
+  const header = [
+    `Chantiers sous ${shownRoot} (profondeur ${depth}) — ${projects.length} projet${projects.length > 1 ? 's' : ''} suivi${projects.length > 1 ? 's' : ''}, `,
+    `${active.length} chantier${active.length > 1 ? 's' : ''} actif${active.length > 1 ? 's' : ''}`,
+    unreadable > 0 ? ` · ${unreadable} dossier${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''} ignoré${unreadable > 1 ? 's' : ''}` : '',
+  ].join('');
+  const blocks = [
+    header,
+    active.length > 0 ? `${scanTitle("Actifs (plus récents d'abord)")}\n${active.map(entry => formatActive(entry, textMax)).join('\n')}` : '',
+    idle.length > 0 ? `${scanTitle(`Sans chantier actif (${idle.length})`)}\n${idle.join(', ')}` : '',
+    others.length > 0 ? `${scanTitle('Autres sections')}\n${others.join('\n')}` : '',
+    anomalies.length > 0
+      ? `${scanTitle('Anomalies')}\n${anomalies.map(anomaly => styleText('red', anomaly)).join('\n')}`
+      : '',
+    flags.clos && closed.length > 0
+      ? `${scanTitle(`Clos (${closed.length}, plus récents d'abord)`)}\n${closed
+        .map(({ project, slug, date, text }) => clip(`${project} · ${slug} · clos ${date ?? '?'} — ${text}`, textMax + 2))
+        .join('\n')}`
+      : '',
+  ].filter(Boolean);
+  const output = blocks.join('\n\n');
+  // The budget protects an agent's context; a user reading in a terminal gets everything.
+  if (output.length <= OUTPUT_BUDGET || process.stdout.isTTY) {
+    console.log(output);
+    return;
+  }
+  const cut = output.slice(0, output.lastIndexOf('\n', OUTPUT_BUDGET));
+  console.log(`ALERTE : sortie coupée à ${cut.length} caractères sur ${output.length} → restreindre le dossier, --profondeur, ou retirer --clos\n\n${cut}`);
+};
+
 const COMMANDS = {
+  scan: cmdScan,
   modele: cmdModele,
   init: cmdInit,
   decision: cmdDecision,
@@ -800,7 +1060,7 @@ const COMMANDS = {
 const [command, ...rest] = process.argv.slice(2);
 const handler = COMMANDS[command];
 if (!handler) {
-  console.error('Usage : pilotage.mjs <init|decision|modele|reprise|contexte|point|purge> [options]');
+  console.error('Usage : pilotage.mjs <init|decision|modele|reprise|contexte|point|purge|scan> [options]');
   process.exit(1);
 }
 handler(parseArgs(rest));

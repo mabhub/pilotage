@@ -3,9 +3,10 @@ name: pilotage
 description: >
   Suivi des chantiers longs dans `.pilotage/` (hors git) : macro-plan, journal,
   statuts, points d'étape (/clear, /compact ou continuer), reprise dans une
-  conversation neuve. Pour une tâche de plusieurs étapes ou une reprise.
+  conversation neuve, vue d'ensemble des chantiers de tous les projets d'une
+  arborescence. Pour une tâche de plusieurs étapes, une reprise ou un tri.
   Triggers : "/pilotage", "point d'étape", "je peux /clear ?", "on reprend",
-  "reprends le chantier".
+  "reprends le chantier", "quels chantiers en cours ?", "état de mes projets".
 ---
 
 # Pilotage des chantiers
@@ -27,9 +28,10 @@ d'abord `references/autres-agents.md` (équivalents des commandes, mesure du con
 veille).
 
 Script : `node <dossier du skill>/scripts/pilotage.mjs <commande>`, lancé depuis la
-racine du projet. Cinq commandes : `init`, `decision`, `modele`, `reprise`, `contexte`,
+racine du projet. Commandes : `init`, `decision`, `modele`, `reprise`, `contexte`,
 plus `point` et `purge` pour l'historique git facultatif (`references/historique.md`, à
-lire seulement si l'historique est actif ou demandé).
+lire seulement si l'historique est actif ou demandé). `scan` fait exception : il se
+lance depuis n'importe quel dossier (voir « Vue d'ensemble de plusieurs projets »).
 `scripts/veille.mjs` n'est pas à lancer à la main : il sert aux hooks de la veille
 (voir « Veille avant expiration du cache »).
 
@@ -41,7 +43,8 @@ Le texte du skill entre dans le contexte et y reste pour toute la session. Le ch
 - début d'une session qui reprend un chantier → `/pilotage reprise <chantier>` ;
 - début d'une tâche de plusieurs étapes → `/pilotage`, pour ouvrir le chantier ;
 - l'utilisateur se demande s'il faut faire `/clear` ou `/compact` → point d'étape ;
-- pause longue annoncée → point d'étape.
+- pause longue annoncée → point d'étape ;
+- l'utilisateur veut savoir quels chantiers sont en cours dans ses projets → `scan`.
 
 **Si le skill est déjà chargé dans la session, ne pas le recharger** : chaque invocation
 réinjecte tout son texte. Répondre directement à « point d'étape » ou « je peux
@@ -274,6 +277,30 @@ Dans une session neuve :
    moment en a besoin (`grep -n` dans `.pilotage/<slug>/` plutôt qu'une lecture
    complète).
 
+## Vue d'ensemble de plusieurs projets
+
+`pilotage.mjs scan [<dossier>] [--profondeur N] [--clos]` cherche les projets qui ont un
+`.pilotage/INDEX.md` sous le dossier (courant par défaut, profondeur 4) et affiche :
+
+- les chantiers actifs, du plus récent au plus ancien : projet, chantier, date du dernier
+  point (celle de l'index, sinon « Dernier point d'étape » de `plan.md`), ancienneté
+  (`dormant` au-delà de 30 jours), identifiants en attente de l'utilisateur (section
+  « En attente » du plan), puis objectif et étape tirés de l'index ;
+- les projets suivis sans chantier actif, le compte des sections maison de l'index
+  (« À suivre »…), les anomalies (chantier absent de l'index, ligne active sans `plan.md`) ;
+- avec `--clos`, les chantiers clos.
+
+Il ne descend ni dans les dossiers cachés ni dans `node_modules`, `vendor`, `venv`, et ne
+suit pas les liens symboliques ; les dossiers illisibles sont comptés, pas listés. Hors
+terminal, la sortie est plafonnée comme celle de `reprise` (une `ALERTE` en tête si elle
+est coupée) et sans couleurs ; en terminal, couleurs et gras mettent en évidence les
+attentes, les chantiers récents ou dormants et les anomalies (`NO_COLOR` les désactive).
+
+Le premier usage est en terminal, sans agent ni token : proposer à l'utilisateur un
+alias (`alias chantiers='node <dossier du skill>/scripts/pilotage.mjs scan ~/projets'`).
+Lancé par l'agent, s'en tenir à la sortie : pour approfondir un chantier, `reprise`
+depuis la racine de son projet.
+
 ## Écrire économe
 
 Le suivi lui-même consomme des tokens. Pour qu'il reste rentable :
@@ -301,7 +328,9 @@ Le suivi lui-même consomme des tokens. Pour qu'il reste rentable :
   de tokens). Ne pas recopier le contenu d'un transcript dans le suivi.
 - **Périmètre du skill** : les seuls transcripts lus sont ceux du projet courant et
   de ses sous-dossiers (`contexte`) ou celui de la session transmis par le hook (veille, qui y cherche en plus
-  un marqueur du skill). Aucun accès réseau. Git est appelé sans shell, en lecture
+  un marqueur du skill). `scan` lit, sous le dossier donné, les `INDEX.md`, les noms des
+  dossiers de chantier et, de chaque `plan.md` actif, la date du dernier point et la
+  section « En attente » ; rien d'autre, ni journal ni git, et sans rien écrire. Aucun accès réseau. Git est appelé sans shell, en lecture
   seule sur le dépôt du projet (`rev-parse`, `symbolic-ref`, `merge-base`, `ls-files`,
   `status`, `log`, `check-ignore`, `worktree list`). Hors de `.pilotage/`, le skill n'écrit que la ligne
   ajoutée à `.git/info/exclude` par `init`, le fichier pid temporaire de la veille
