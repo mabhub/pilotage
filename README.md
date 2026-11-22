@@ -71,9 +71,9 @@ In Claude Code:
 | You type | What happens |
 |---|---|
 | `/pilotage` at the start of a multi-step task | opens a chantier |
-| `point d'étape` or `je peux /clear ?` | checkpoint and recommendation |
+| `checkpoint` or `can I /clear?` | checkpoint and recommendation |
 | `/pilotage reprise <chantier>` in a new session | resumes the chantier |
-| `quels chantiers en cours ?` | overview of your projects |
+| `which chantiers are in progress?` | overview of your projects |
 
 The agent drives the bundled script, `skills/pilotage/scripts/pilotage.mjs`:
 

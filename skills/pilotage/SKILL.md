@@ -5,8 +5,8 @@ description: >
   statuts, points d'étape (/clear, /compact ou continuer), reprise dans une
   conversation neuve, vue d'ensemble des chantiers de tous les projets d'une
   arborescence. Pour une tâche de plusieurs étapes, une reprise ou un tri.
-  Triggers : "/pilotage", "point d'étape", "je peux /clear ?", "on reprend",
-  "reprends le chantier", "quels chantiers en cours ?", "état de mes projets".
+  Triggers : "/pilotage", "checkpoint", "can I /clear?", "let's resume",
+  "resume the chantier", "which chantiers are in progress?", "status of my projects".
 ---
 
 # Pilotage des chantiers
@@ -47,8 +47,8 @@ Le texte du skill entre dans le contexte et y reste pour toute la session. Le ch
 - l'utilisateur veut savoir quels chantiers sont en cours dans ses projets → `scan`.
 
 **Si le skill est déjà chargé dans la session, ne pas le recharger** : chaque invocation
-réinjecte tout son texte. Répondre directement à « point d'étape » ou « je peux
-/clear ? » avec la méthode ci-dessous.
+réinjecte tout son texte. Répondre directement à « checkpoint » ou « can I
+/clear? » avec la méthode ci-dessous.
 
 Inutile pour une tâche de deux ou trois tours ou une question ponctuelle : le suivi
 coûterait plus qu'il ne rapporte.
