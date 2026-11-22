@@ -352,7 +352,7 @@ const mustGit = (base, args, env) => {
  * the patterns, then checks that no object still holds one. Only counts are printed.
  * @param {{base: string, patternsFile: string}} context - .pilotage folder, patterns file
  * @returns {string[]} lines to print
- * @throws {HistoryError} on any refusal or failure (the patterns file is then kept)
+ * @throws {HistoryError} on any refusal or failure
  */
 export const purgeHistory = ({ base, patternsFile }) => {
   assertCanCommit(base);
@@ -369,11 +369,12 @@ export const purgeHistory = ({ base, patternsFile }) => {
   // Commit objects hold identities, shas and trailers, which the tree filter cannot rewrite.
   const { blob: found, commit: inCommits } = objectsWithPattern(base, patterns);
   if (inCommits > 0) {
-    throw new HistoryError(`ERREUR : le motif correspond aussi à ${inCommits} commit(s) du mini-dépôt (auteur, e-mail, sha ou branche), que la purge ne réécrit pas : préciser le motif. Fichier de motifs conservé.`);
+    throw new HistoryError(`ERREUR : le motif correspond aussi à ${inCommits} commit(s) du mini-dépôt (auteur, e-mail, sha ou branche), que la purge ne réécrit pas : préciser le motif.`);
   }
+  // The file is never deleted: it may be the very file that holds the secret elsewhere.
+  const keptFile = `Fichier de motifs conservé (${patternsFile}) : le supprimer s'il a été écrit pour la purge.`;
   if (found === 0) {
-    fs.rmSync(file);
-    return [...caughtUp, "Purge : aucun motif trouvé dans l'historique, rien à réécrire."];
+    return [...caughtUp, "Purge : aucun motif trouvé dans l'historique, rien à réécrire.", keptFile];
   }
   const commits = () => mustGit(base, ['rev-list', '--all']).split('\n');
   const before = commits();
@@ -390,10 +391,9 @@ export const purgeHistory = ({ base, patternsFile }) => {
   mustGit(base, ['gc', '--prune=now', '--aggressive', '-q']);
   const left = objectsWithPattern(base, patterns).blob;
   if (left > 0) {
-    throw new HistoryError(`ERREUR : vérification échouée, ${left} objet(s) contiennent encore un motif. Fichier de motifs conservé.`);
+    throw new HistoryError(`ERREUR : vérification échouée, ${left} objet(s) contiennent encore un motif.`);
   }
   const after = new Set(commits());
   const rewritten = before.filter(id => !after.has(id)).length;
-  fs.rmSync(file);
-  return [...caughtUp, `Purge : ${found} objet(s) contenaient un motif · ${rewritten} commit(s) réécrit(s) · vérification OK · fichier de motifs supprimé`];
+  return [...caughtUp, `Purge : ${found} objet(s) contenaient un motif · ${rewritten} commit(s) réécrit(s) · vérification OK`, keptFile];
 };

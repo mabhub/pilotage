@@ -415,10 +415,11 @@ test('purge removes a literal secret from all history', t => {
   const file = patternsFile(s, `${SECRET}\n`);
   const res = s.run(['purge', '--motifs', file]);
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /Purge : \d+ objet\(s\) contenaient un motif · \d+ commit\(s\) réécrit\(s\) · vérification OK · fichier de motifs supprimé/);
+  assert.match(res.stdout, /Purge : \d+ objet\(s\) contenaient un motif · \d+ commit\(s\) réécrit\(s\) · vérification OK\n/);
+  assert.ok(res.stdout.includes(`Fichier de motifs conservé (${file}) : le supprimer s'il a été écrit pour la purge.`), res.stdout);
   assert.deepEqual(objectsWith(s, SECRET), []);
   assert.equal(commitCount(s), before);
-  assert.ok(!fs.existsSync(file));
+  assert.equal(fs.readFileSync(file, 'utf8'), `${SECRET}\n`, 'patterns file left untouched');
   assert.ok(!res.stdout.includes(SECRET) && !res.stderr.includes(SECRET));
   assert.equal(s.miniGit('for-each-ref', 'refs/original/'), '');
   assert.equal(s.miniGit('status', '--porcelain'), '');
@@ -473,7 +474,21 @@ test('purge with nothing to purge', t => {
   assert.equal(res.status, 0, res.stderr);
   assert.ok(res.stdout.includes('Purge : aucun motif trouvé dans l\'historique, rien à réécrire.'), res.stdout);
   assert.equal(s.miniGit('rev-parse', 'HEAD'), head);
-  assert.ok(!fs.existsSync(file));
+  assert.ok(fs.existsSync(file));
+});
+
+test('purge keeps a patterns file given through a symlink, and its target', t => {
+  const s = activeSandbox(t);
+  leakSecret(s);
+  const target = path.join(s.tmp, 'token');
+  fs.writeFileSync(target, `${SECRET}\n`);
+  const link = path.join(s.tmp, 'motifs-lien.txt');
+  fs.symlinkSync(target, link);
+  const res = s.run(['purge', '--motifs', link]);
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(fs.readFileSync(target, 'utf8'), `${SECRET}\n`);
+  assert.ok(fs.lstatSync(link).isSymbolicLink());
+  assert.ok(res.stdout.includes(`(${link})`), res.stdout);
 });
 
 test('purge needs the history mode and a patterns file', t => {
@@ -495,7 +510,7 @@ test('purge refuses a pattern that matches commit metadata', t => {
   const file = patternsFile(s, 'test@example.invalid\n');
   const res = s.run(['purge', '--motifs', file]);
   assert.equal(res.status, 1);
-  assert.match(res.stderr, /ERREUR : le motif correspond aussi à \d+ commit\(s\) du mini-dépôt \(auteur, e-mail, sha ou branche\), que la purge ne réécrit pas : préciser le motif\. Fichier de motifs conservé\./);
+  assert.match(res.stderr, /ERREUR : le motif correspond aussi à \d+ commit\(s\) du mini-dépôt \(auteur, e-mail, sha ou branche\), que la purge ne réécrit pas : préciser le motif\./);
   assert.equal(s.miniGit('rev-parse', 'HEAD'), head);
   assert.ok(fs.existsSync(file));
 });

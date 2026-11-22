@@ -100,12 +100,15 @@ Un secret commité reste dans tous les commits, même retiré du fichier. Pour l
    l'historique (`filter-branch`, chaque occurrence → `***REMOVED***`), nettoyage
    (`reflog expire`, `gc --prune=now`), puis vérification de tous les objets, même
    inaccessibles. Succès :
-   `Purge : <n> objet(s) contenaient un motif · <c> commit(s) réécrit(s) · vérification OK · fichier de motifs supprimé`.
-   Rien trouvé : `rien à réécrire`, fichier supprimé aussi. Échec de vérification :
-   `ERREUR : vérification échouée …`, fichier conservé.
+   `Purge : <n> objet(s) contenaient un motif · <c> commit(s) réécrit(s) · vérification OK`.
+   Rien trouvé : `rien à réécrire`. Échec de vérification :
+   `ERREUR : vérification échouée …`.
    La purge ne réécrit que le contenu des fichiers : un motif qui correspond aussi à un
-   commit (auteur, e-mail, sha, branche) est refusé avant toute réécriture, fichier
-   conservé. Préciser le motif.
+   commit (auteur, e-mail, sha, branche) est refusé avant toute réécriture. Préciser le
+   motif.
+4. La purge ne supprime jamais le fichier de motifs : il peut être le fichier qui
+   garde le secret ailleurs (`--motifs ~/.config/<outil>/token`). Elle rappelle son
+   chemin ; à l'utilisateur de le supprimer s'il l'a écrit pour l'occasion.
 
 Limites :
 
