@@ -110,7 +110,19 @@ const parseArgs = (argv, booleans = new Set(['git', 'clos'])) => argv.reduce(
   { flags: {}, positional: [], skip: false },
 );
 
-const today = () => new Date().toISOString().slice(0, 10);
+/**
+ * Calendar date in the local time zone, as YYYY-MM-DD (toISOString would give the UTC date,
+ * a day off in the evening west of Greenwich or in the morning east of it).
+ * @param {Date} [date] - instant, now by default
+ * @returns {string} local date
+ */
+const localDate = (date = new Date()) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0'),
+].join('-');
+
+const today = () => localDate();
 
 /**
  * Fills a template from assets/ with {{KEY}} placeholders.
@@ -408,7 +420,7 @@ const superpowersLedgers = root => {
       const lines = fs.readFileSync(file, 'utf8').split('\n').map(line => line.trim()).filter(Boolean);
       const plan = lines[0]?.match(/plan: (.*)$/)?.[1] ?? '?';
       const done = lines.filter(line => /Task \d+: complete/.test(line)).length;
-      const date = fs.statSync(file).mtime.toISOString().slice(0, 10);
+      const date = localDate(fs.statSync(file).mtime);
       const last = (lines.at(-1) ?? '').slice(0, 120);
       return `- ${path.relative(root, file) || file} — plan : ${plan} — ${done} tâche(s) complete — modifié le ${date}\n  dernière ligne : ${last}`;
     });
@@ -972,7 +984,8 @@ const planSummary = planFile => {
 };
 
 /**
- * Days elapsed since a date (YYYY-MM-DD), counted in whole days from today.
+ * Days elapsed since a date (YYYY-MM-DD), counted in whole days from today. Both dates parse as
+ * UTC midnight, so the difference is a whole number of days whatever the zone or daylight saving.
  * @param {string} date - ISO date
  * @returns {number} days
  */

@@ -14,12 +14,18 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'pilotage', 'scripts', 'pilotage.mjs');
 
 /**
- * Date N days before today, as YYYY-MM-DD.
+ * Today's calendar date in a time zone, as YYYY-MM-DD (en-CA formats dates that way).
+ * @param {string} [timeZone] - IANA zone, the local one by default
+ * @returns {string} date
+ */
+const localToday = timeZone => new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date());
+
+/**
+ * Date N days before today (local time zone), as YYYY-MM-DD.
  * @param {number} days - days ago
  * @returns {string} ISO date
  */
-const daysAgo = days => new Date(Date.parse(new Date().toISOString().slice(0, 10)) - days * 86_400_000)
-  .toISOString().slice(0, 10);
+const daysAgo = days => new Date(Date.parse(localToday()) - days * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * Creates a throwaway folder and helpers to add projects and run `scan` in it.
@@ -197,4 +203,21 @@ test('scan follows a .pilotage link but counts an unreadable index', { skip: pro
   assert.equal(status, 0);
   assert.match(stdout, /1 projet suivi, 1 chantier actif · 1 dossier illisible ignoré/);
   assert.match(stdout, /groupe\/lien · lie/);
+});
+
+test('dates follow the local time zone, not UTC', t => {
+  const s = sandbox(t);
+  // A zone whose calendar date differs from UTC right now: UTC-12 before noon UTC, UTC+14 after.
+  const timeZone = new Date().getUTCHours() < 12 ? 'Etc/GMT+12' : 'Etc/GMT-14';
+  const local = localToday(timeZone);
+  assert.notEqual(local, new Date().toISOString().slice(0, 10));
+  const project = path.join(s.root, 'p');
+  fs.mkdirSync(project);
+  const env = { ...process.env, TZ: timeZone };
+  const init = spawnSync(process.execPath, [SCRIPT, 'init', '--chantier', 'demo'], { cwd: project, encoding: 'utf8', env });
+  assert.equal(init.status, 0, init.stderr);
+  const plan = fs.readFileSync(path.join(project, '.pilotage', 'demo', 'plan.md'), 'utf8');
+  assert.match(plan, new RegExp(`\\*\\*Ouvert le\\*\\* : ${local} `));
+  s.project('p', { Actifs: [line('demo', 'objectif', local)] });
+  assert.match(s.run([], { TZ: timeZone }).stdout, new RegExp(`p · demo · maj ${local} \\(0 j\\)`));
 });
