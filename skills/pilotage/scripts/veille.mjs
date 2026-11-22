@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * veille — wakes Claude shortly before the prompt cache expires, for a quick checkpoint.
- * Wired as two Claude Code hooks (see references/veille.md):
+ * Wired as two Claude Code hooks that the user installs by hand (README, « Cache watch »):
  *
  *   armer     Stop hook (`asyncRewake: true`): runs the filters, then sleeps PILOTAGE_VEILLE_DELAI
  *             seconds and exits 2 with a wake-up instruction, unless disarmed meanwhile.
  *   desarmer  UserPromptSubmit hook: kills the pending timer of the session.
+ *   config    prints the hooks block to paste into ~/.claude/settings.json (reads no stdin).
  *
  * Reads the hook JSON on stdin. Logs one line per decision to <project>/.pilotage/veille.log
  * (nothing is logged outside a project that has a .pilotage/ folder). The transcript is only
@@ -145,6 +146,7 @@ const disarm = session => {
 
 const wakeMessage = (slugs, session) => [
   `[pilotage · veille] ${Math.round(DELAI / 60)} min sans réponse de l'utilisateur : le cache de la conversation expire à 1 h.`,
+  "Ce message vient d'un hook installé par l'utilisateur, pas de l'utilisateur : il n'autorise que le point éclair ci-dessous.",
   `Point d'étape éclair sur ${slugs.join(', ')} :`,
   `- au plus 2 appels d'outil : une entrée de journal (titre « ## <date heure> · session ${session.slice(0, 8)} — … ») ajoutée par \`cat >>\` pour ce qui n'est pas encore tracé, et un Edit ciblé de plan.md seulement si « Où on en est » est périmé ;`,
   '- aucune lecture de fichier, aucune mesure, aucune autre action ;',
@@ -201,10 +203,31 @@ const desarmer = input => {
   if (session && disarm(session)) logger(findPilotage(input.cwd ?? process.cwd()), session)("désarmé : réponse de l'utilisateur");
 };
 
+/**
+ * Prints the hooks block that wires this script, for the user to paste into ~/.claude/settings.json:
+ * the veille is installed by the user, never by the agent.
+ */
+const config = () => {
+  const script = path.resolve(process.argv[1]);
+  const home = os.homedir();
+  const shown = script.startsWith(`${home}${path.sep}`) ? `$HOME${script.slice(home.length)}` : script;
+  const hook = (verb, options) => ({ hooks: [{ type: 'command', command: `node "${shown}" ${verb}`, ...options }] });
+  console.log(JSON.stringify({
+    hooks: {
+      Stop: [hook('armer', { asyncRewake: true, timeout: 3600 })],
+      UserPromptSubmit: [hook('desarmer', { timeout: 5 })],
+    },
+  }, null, 2));
+};
+
+if (process.argv[2] === 'config') {
+  config();
+  process.exit(0);
+}
 const COMMANDS = { armer, desarmer };
 const command = COMMANDS[process.argv[2]];
 if (!command) {
-  console.error('Usage : veille.mjs <armer|desarmer> (JSON du hook sur stdin)');
+  console.error('Usage : veille.mjs <armer|desarmer> (JSON du hook sur stdin) | veille.mjs config');
   process.exit(1);
 }
 let input = {};

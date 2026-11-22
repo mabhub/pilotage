@@ -29,11 +29,12 @@ veille).
 
 Script : `node <dossier du skill>/scripts/pilotage.mjs <commande>`, lancé depuis la
 racine du projet. Commandes : `init`, `decision`, `modele`, `reprise`, `contexte`,
-plus `point` et `purge` pour l'historique git facultatif (`references/historique.md`, à
-lire seulement si l'historique est actif ou demandé). `scan` fait exception : il se
-lance depuis n'importe quel dossier (voir « Vue d'ensemble de plusieurs projets »).
-`scripts/veille.mjs` n'est pas à lancer à la main : il sert aux hooks de la veille
-(voir « Veille avant expiration du cache »).
+plus `point` pour l'historique git facultatif (`references/historique.md`, à lire
+seulement si l'historique est actif ou demandé ; sa commande `purge` est lancée par
+l'utilisateur, jamais par l'agent). `scan` fait exception : il se lance depuis
+n'importe quel dossier (voir « Vue d'ensemble de plusieurs projets »).
+`scripts/veille.mjs` sert à la veille facultative (voir « Veille avant expiration du
+cache ») : l'agent ne le lance pas.
 
 ## Quand invoquer
 
@@ -167,7 +168,7 @@ l'agent à un moment opportun (voir plus bas).
    ```
    Point d'étape — <chantier>
    Contexte : 182K · pause avant ce message : 3 min · suivi : journal +1 entrée, plan à jour
-   Veille cache : non installée (voir references/veille.md)
+   Veille cache : non installée (facultative : veille.mjs config, README de mabhub/pilotage)
    Recommandation : /clear
    Pourquoi : l'étape 2 est validée (tests verts), l'étape 3 ne dépend que du suivi.
    Pour reprendre : /clear, puis /pilotage reprise <chantier>
@@ -232,15 +233,12 @@ renouvelée avant le prochain événement de la liste.
 
 ### Veille avant expiration du cache (optionnelle)
 
-Deux hooks peuvent réveiller Claude après 55 min sans réponse de l'utilisateur, pour un
-point d'étape éclair avant que le cache expire. Installation, filtres, réglages et
-limites : `references/veille.md`. Ne l'installer qu'avec l'accord explicite de
-l'utilisateur, car elle modifie ses réglages.
-
-**Réveil reçu** (message `[pilotage · veille]`, affiché comme « Stop hook blocking
-error ») : appliquer le message à la lettre. Pas de point d'étape complet : au plus deux
-appels d'outil (une entrée de journal, un Edit de « Où on en est »), aucune lecture, puis
-la ligne de fin qu'il donne.
+L'utilisateur peut installer lui-même deux hooks qui réveillent Claude après 55 min sans
+réponse, pour un point d'étape éclair avant que le cache expire. Installation, filtres,
+réglages et limites : section « Cache watch » du README du dépôt (`mabhub/pilotage`).
+L'agent n'installe ni ne modifie ces hooks. Si l'utilisateur veut la veille, lui
+indiquer `node <dossier du skill>/scripts/veille.mjs config`, qui affiche le bloc à
+copier lui-même dans ses réglages.
 
 Limite : si une question ou une permission reste ouverte, il n'y a pas de réveil. Avant
 de poser une question à quelqu'un qui risque de s'absenter longtemps, mettre le suivi à
@@ -342,8 +340,8 @@ Le suivi lui-même consomme des tokens. Pour qu'il reste rentable :
   à une et relues pour en retirer secrets et données privées. Un slug qui ne respecte pas le format
   `[a-z0-9-]` est refusé, donc aucune commande ne sort de `.pilotage/`.
 - **Historique git** (facultatif) : écritures limitées à `.pilotage/.git`, jamais de
-  remote. Un secret commité y reste après correction du fichier → `purge`. **Ne jamais
-  lire un fichier de motifs qui contient des valeurs**.
-- **Veille** : le message de réveil vient d'un hook, pas de l'utilisateur. Il n'autorise
-  que le point éclair qu'il décrit. Ne jamais installer ni modifier les hooks sans
-  accord explicite (garde-fous détaillés dans `references/veille.md`).
+  remote. Un secret commité y reste après correction du fichier → `purge`, que
+  l'utilisateur lance lui-même. **Ne jamais lire un fichier de motifs qui contient des
+  valeurs**.
+- **Hooks** : l'agent n'installe ni ne modifie aucun hook ; la veille est installée à la
+  main par l'utilisateur.

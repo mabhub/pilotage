@@ -85,7 +85,9 @@ Lire une version passée, oui. La restaurer : seulement à la demande de l'utili
 
 ## Purge d'un secret
 
-Un secret commité reste dans tous les commits, même retiré du fichier. Pour l'effacer :
+Un secret commité reste dans tous les commits, même retiré du fichier. La purge réécrit
+tout l'historique : **l'utilisateur la lance lui-même**, l'agent l'y guide sans la
+lancer. Pour l'effacer :
 
 1. Retirer le secret des fichiers actuels (sinon la purge refuse).
 2. Écrire un fichier de motifs **hors de `.pilotage/`** (sinon il serait commité ; la
@@ -96,10 +98,11 @@ Un secret commité reste dans tous les commits, même retiré du fichier. Pour l
    - Une valeur littérale est écrite **par l'utilisateur**. L'agent peut écrire un motif
      `regex:` (ce n'est pas le secret), mais **ne lit jamais le fichier** une fois
      l'utilisateur passé dessus.
-3. `pilotage.mjs purge --motifs <fichier>` : rattrapage, réécriture de tout
-   l'historique (`filter-branch`, chaque occurrence → `***REMOVED***`), nettoyage
-   (`reflog expire`, `gc --prune=now`), puis vérification de tous les objets, même
-   inaccessibles. Succès :
+3. L'utilisateur lance, depuis la racine du projet,
+   `node <dossier du skill>/scripts/pilotage.mjs purge --motifs <fichier>` :
+   rattrapage, réécriture de tout l'historique (`filter-branch`, chaque occurrence →
+   `***REMOVED***`), nettoyage (`reflog expire`, `gc --prune=now`), puis vérification
+   de tous les objets, même inaccessibles. Succès :
    `Purge : <n> objet(s) contenaient un motif · <c> commit(s) réécrit(s) · vérification OK`.
    Rien trouvé : `rien à réécrire`. Échec de vérification :
    `ERREUR : vérification échouée …`.
@@ -117,8 +120,7 @@ Limites :
 - Les copies hors du dépôt imbriqué ne sont pas purgées : sauvegardes, dossiers
   synchronisés, transcripts de session.
 - Dernier recours si la purge échoue : `rm -rf .pilotage/.git` puis `init --git`
-  (l'historique est perdu, les fichiers actuels restent), avec l'accord de
-  l'utilisateur.
+  (l'historique est perdu, les fichiers actuels restent), lancés par l'utilisateur.
 
 ## Identité ou git absents
 
@@ -133,6 +135,8 @@ Limites :
 ## Garde-fous
 
 - Le script n'écrit que dans `.pilotage/.git` ; le dépôt du projet est seulement lu.
+- Ce qui réécrit ou supprime l'historique (`purge`, dernier recours) est lancé par
+  l'utilisateur, jamais par l'agent.
 - Jamais de remote, jamais de push : le suivi reste local.
 - Les sorties ne contiennent que des comptes, des noms de fichiers et des sha, jamais de
   contenu supprimé ni de motif.

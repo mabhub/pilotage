@@ -16,7 +16,7 @@
  *                                                cache watch hooks status (Claude Code transcripts only; the session
  *                                                defaults to $CLAUDE_CODE_SESSION_ID)
  *   point <slug>                                 history on: commit .pilotage/ at the end of a checkpoint
- *   purge --motifs <fichier>                     history on: replace the patterns (secrets) in the whole history
+ *   purge --motifs <fichier>                     history on: replace the patterns (secrets) in the whole history; run by the user
  *   scan [<dossier>] [--profondeur N] [--clos]   list the chantiers of every project found below a folder (read-only:
  *                                                INDEX.md, chantier folder names, « En attente » of plan.md)
  *
@@ -741,7 +741,7 @@ const readSettings = file => {
 };
 
 /**
- * One-line status of the cache watch hooks (see references/veille.md), from user and project settings.
+ * One-line status of the cache watch hooks (see the README, « Cache watch »), from user and project settings.
  * @param {string} root - project root
  * @param {boolean} inClaudeCode - whether the script runs inside Claude Code
  * @returns {string} status line
@@ -763,11 +763,11 @@ const veilleStatus = (root, inClaudeCode) => {
   const desarmer = find('UserPromptSubmit', 'desarmer');
   if (!armer) {
     return inClaudeCode
-      ? 'Veille cache : non installée (voir references/veille.md)'
+      ? 'Veille cache : non installée (facultative : veille.mjs config, README de mabhub/pilotage)'
       : 'Veille cache : sans objet hors Claude Code';
   }
-  if (!desarmer) return 'Veille cache : incomplète, hook UserPromptSubmit absent (voir references/veille.md)';
-  if (!fs.existsSync('/proc/self/cmdline')) return 'Veille cache : installée mais inactive, /proc absent (voir references/veille.md)';
+  if (!desarmer) return 'Veille cache : incomplète, hook UserPromptSubmit absent (veille.mjs config, README de mabhub/pilotage)';
+  if (!fs.existsSync('/proc/self/cmdline')) return 'Veille cache : installée mais inactive, /proc absent (README de mabhub/pilotage)';
   // Same resolution as veille.mjs sees it: command prefix, then settings `env`, then the shell.
   const raw = armer.command.match(/PILOTAGE_VEILLE_DELAI=(\S+)/)?.[1]
     ?? settings.findLast(({ env }) => env?.PILOTAGE_VEILLE_DELAI !== undefined)?.env.PILOTAGE_VEILLE_DELAI

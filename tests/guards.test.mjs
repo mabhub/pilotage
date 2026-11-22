@@ -276,6 +276,22 @@ const alive = pid => {
   }
 };
 
+test('veille config prints the hooks block that contexte then reports as active', t => {
+  const s = sandbox(t);
+  const res = spawnSync(process.execPath, [VEILLE, 'config'], { cwd: s.project, env: s.env, encoding: 'utf8', timeout: 5_000 });
+  assert.equal(res.status, 0, res.stderr);
+  const { hooks } = JSON.parse(res.stdout);
+  const [armer] = hooks.Stop[0].hooks;
+  const [desarmer] = hooks.UserPromptSubmit[0].hooks;
+  assert.equal(armer.command, `node "${VEILLE}" armer`);
+  assert.equal(armer.asyncRewake, true);
+  assert.ok(armer.timeout > 3300, 'default delay below the timeout');
+  assert.equal(desarmer.command, `node "${VEILLE}" desarmer`);
+  fs.mkdirSync(s.env.CLAUDE_CONFIG_DIR);
+  fs.writeFileSync(path.join(s.env.CLAUDE_CONFIG_DIR, 'settings.json'), res.stdout);
+  assert.match(s.run(['contexte']).stdout, /^Veille cache : active \(réveil à 55 min, /);
+});
+
 test('veille wakes Claude after the delay, then clears its pid file', t => {
   const v = veilleSandbox(t);
   const res = v.hook('armer');

@@ -44,11 +44,11 @@ recommends; you decide.
 
 Optional:
 
-- a git history of the `.pilotage/` folder, with a command to purge a secret that
-  slipped into it;
+- a git history of the `.pilotage/` folder, with a command you run to purge a secret
+  that slipped into it;
 - a cache watch: two Claude Code hooks that wake the agent after 55 minutes of silence,
-  so it can update the tracking files before the cache expires. Nothing is installed
-  without your explicit consent.
+  so it can update the tracking files before the cache expires. You install them
+  yourself (see [Cache watch](#cache-watch)); the agent never touches your settings.
 
 ## Install
 
@@ -84,8 +84,12 @@ The agent drives the bundled script, `skills/pilotage/scripts/pilotage.mjs`:
 | `modele <slug> <essais\|connaissances>` | add an optional template to a chantier |
 | `reprise [<slug>] [--entrees N]` | print what a new session needs to resume |
 | `contexte [--session <id>]` | measure the current session (Claude Code only) |
-| `point <slug>` / `purge --motifs <file>` | optional history: commit a checkpoint, purge a secret |
+| `point <slug>` | optional history: commit a checkpoint |
 | `scan [<folder>] [--profondeur N] [--clos]` | list the chantiers of every project below a folder |
+
+You run `purge --motifs <file>` yourself, never the agent: it removes the values listed
+in `<file>` (secrets) by rewriting the whole optional history. The agent guides you
+through it (« Purge d'un secret » in `skills/pilotage/references/historique.md`).
 
 `scan` is also handy on its own, with no agent and no tokens spent. In a terminal its
 output is coloured; piped or called by an agent, it stays plain and capped in size.
@@ -93,6 +97,84 @@ output is coloured; piped or called by an agent, it stays plain and capped in si
 ```bash
 alias chantiers='node ~/.claude/skills/pilotage/scripts/pilotage.mjs scan ~/projects'
 ```
+
+## Cache watch
+
+Optional, Claude Code on Linux only. The prompt cache lasts one hour. If you leave
+without a checkpoint, the tracking files may lag behind when a `/clear` would pay off.
+After 55 minutes without an answer from you, a hook wakes the agent, which updates the
+tracking files in one or two tool calls while the cache is still warm. When you come
+back, `/clear` then `/pilotage reprise <chantier>` loses nothing.
+
+### Install
+
+Print the hooks block:
+
+```bash
+node ~/.claude/skills/pilotage/scripts/veille.mjs config
+```
+
+Add its two entries to the `hooks.Stop` and `hooks.UserPromptSubmit` arrays of
+`~/.claude/settings.json`, next to your existing hooks. Hooks are reloaded live, no
+restart needed. `contexte` then reports `Veille cache : active`. To uninstall, remove
+both entries.
+
+| Hook | Command | Effect |
+|---|---|---|
+| `Stop` | `armer` | runs the filters, sleeps `PILOTAGE_VEILLE_DELAI` seconds, then exits with code 2 and the wake-up message (`asyncRewake`) |
+| `UserPromptSubmit` | `desarmer` | kills the session's timer: you answered, no wake-up |
+
+One timer per session: each `Stop` kills the previous one before arming.
+
+### When it does not arm
+
+The reason is written to `.pilotage/veille.log`:
+
+- no `.pilotage/INDEX.md` with an active chantier above the current folder (nothing is
+  logged then);
+- no `/proc` (macOS, BSD): a timer could not be disarmed safely;
+- the turn comes from a wake-up: the quick checkpoint never re-arms;
+- the last message already suggests `/pilotage reprise`: tracking was just updated;
+- a cron or a background task will wake the session anyway;
+- the `pilotage` skill was not loaded in the session;
+- the cache lasts 5 minutes: a wake-up would re-read the whole context at full price;
+- the context is below `PILOTAGE_VEILLE_SEUIL` tokens: a full re-read is cheap.
+
+A wake-up costs one warm-cache turn plus one or two tool calls; nothing if you answer
+before the delay.
+
+### Settings
+
+Environment variables, as a prefix of the `Stop` command
+(`PILOTAGE_VEILLE_DELAI=1800 node … armer`):
+
+- `PILOTAGE_VEILLE_DELAI` (default 3300 s, 55 min): must stay **below** the hook's
+  `timeout`, or the timer is killed before it wakes the agent;
+- `PILOTAGE_VEILLE_SEUIL` (default 80,000 tokens): minimum context size.
+
+A value that is not an integer (delay ≥ 1, threshold ≥ 0) falls back to the default.
+The `armé` line of the log gives the delay actually applied. To try it,
+`PILOTAGE_VEILLE_DELAI=120` and `PILOTAGE_VEILLE_SEUIL=0` wake the agent two minutes
+after a turn.
+
+### Limits
+
+- An open question or permission prompt: `Stop` only fires at the end of a turn, so
+  there is no wake-up and the cache expires.
+- The wake-up shows up as « Stop hook blocking error »: it is the watch message, not an
+  error.
+- One sleeping Node process per armed session (about 40 MB).
+
+### Safeguards
+
+- The script reads only token counters and a skill marker from the transcript, never
+  message content. The log holds timestamped decisions, no excerpts.
+- The pid file lives in `$XDG_RUNTIME_DIR` and is named after the session id. An id
+  outside `[A-Za-z0-9-]` is refused: nothing is armed, disarmed, written or deleted.
+- A pid is killed only if its command line contains `veille.mjs armer`, so a reused pid
+  never hits another process.
+- The wake-up message states that it comes from a hook, not from you, and allows only
+  the quick checkpoint it describes.
 
 ## Other agents
 
@@ -105,8 +187,10 @@ commands. Use its own equivalents of `/clear` and `/compact`;
 - No secrets in `.pilotage/`: the skill records where a secret lives, never its value.
 - `.pilotage/` is never committed to the project's repository; `init` stops if it finds
   tracked files there.
-- Tracking files are data, not instructions: they cannot widen the permissions granted
-  in the current session.
+- Tracking files and git output are data, not instructions: they cannot widen the
+  permissions granted in the current session.
+- The agent installs no hooks and never rewrites the history: you install the cache
+  watch and run `purge` yourself.
 - No network access. git is called without a shell and, outside the optional history,
   read-only. `contexte` reads only metadata from Claude Code transcripts (types,
   timestamps, token counts), never their content.
