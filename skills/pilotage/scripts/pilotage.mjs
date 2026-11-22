@@ -606,28 +606,75 @@ const cmdReprise = ({ flags, positional }) => {
  */
 const projectSlug = dir => dir.replace(/[^a-zA-Z0-9]/g, '-');
 
+/** Bytes read at the head of a transcript to find its working directory. */
+const CWD_PROBE_BYTES = 1024 * 1024;
+
+/**
+ * Working directory recorded in a transcript: the `cwd` field of its first entry that has one,
+ * within its first CWD_PROBE_BYTES (metadata only).
+ * @param {string} file - transcript path
+ * @returns {string|null} working directory, or null when absent or unreadable
+ */
+const transcriptCwd = file => {
+  let head;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buffer = Buffer.alloc(CWD_PROBE_BYTES);
+      head = buffer.toString('utf8', 0, fs.readSync(fd, buffer, 0, CWD_PROBE_BYTES, 0));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  for (const line of head.split('\n')) {
+    if (!line.includes('"cwd"')) continue;
+    try {
+      const { cwd } = JSON.parse(line);
+      if (typeof cwd === 'string') return cwd;
+    } catch {
+      // Truncated last line or malformed entry: try the next one.
+    }
+  }
+  return null;
+};
+
 /**
  * Locates the transcript of the current session. Claude Code files transcripts under the folder the
  * session started in, which may be a subfolder of the project root: the root, the cwd and every
- * project folder below the root are searched.
+ * project folder below the root are searched. A slug does not tell `foo/bar` from the sibling
+ * project `foo-bar`, so a transcript found through a longer slug counts only if its recorded
+ * working directory lies inside the root.
  * @param {string|undefined} sessionId - explicit session id
  * @returns {string|null} transcript path
  */
 const findTranscript = sessionId => {
   const projectsDir = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects');
   if (!fs.existsSync(projectsDir)) return null;
-  const rootSlug = projectSlug(projectRoot().root);
+  const { root } = projectRoot();
+  const exactSlugs = new Set([projectSlug(root), projectSlug(process.cwd())]);
   const projectDirs = fs.readdirSync(projectsDir)
-    .filter(name => name === projectSlug(process.cwd()) || name === rootSlug || name.startsWith(`${rootSlug}-`))
-    .map(name => path.join(projectsDir, name));
+    .filter(name => exactSlugs.has(name) || name.startsWith(`${projectSlug(root)}-`))
+    .map(name => ({ dir: path.join(projectsDir, name), exact: exactSlugs.has(name) }));
+  const inProject = ({ file, exact }) => {
+    if (exact) return true;
+    const cwd = transcriptCwd(file);
+    return cwd !== null && cwd.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+  };
   if (sessionId) {
-    return projectDirs.map(dir => path.join(dir, `${sessionId}.jsonl`)).find(file => fs.existsSync(file)) ?? null;
+    return projectDirs
+      .map(({ dir, exact }) => ({ file: path.join(dir, `${sessionId}.jsonl`), exact }))
+      .find(candidate => fs.existsSync(candidate.file) && inProject(candidate))?.file ?? null;
   }
   // The current session's transcript is the one being written right now.
   return projectDirs
-    .flatMap(dir => fs.readdirSync(dir).filter(name => name.endsWith('.jsonl')).map(name => path.join(dir, name)))
-    .map(file => ({ file, mtime: fs.statSync(file).mtimeMs }))
-    .toSorted((a, b) => b.mtime - a.mtime)[0]?.file ?? null;
+    .flatMap(({ dir, exact }) => fs.readdirSync(dir)
+      .filter(name => name.endsWith('.jsonl'))
+      .map(name => ({ file: path.join(dir, name), exact })))
+    .map(candidate => ({ ...candidate, mtime: fs.statSync(candidate.file).mtimeMs }))
+    .toSorted((a, b) => b.mtime - a.mtime)
+    .find(inProject)?.file ?? null;
 };
 
 /**
@@ -737,12 +784,13 @@ const cmdContexte = ({ flags }) => {
   const base = path.join(root, DIR_NAME);
   if (historyActive(base)) catchUp({ base, command: 'contexte' }).forEach(line => console.log(line));
   const exact = sessionId ? findTranscript(sessionId) : null;
-  // Without an exact match, guess the most recent transcript, unless the user named the session.
-  const file = exact ?? (flags.session ? null : findTranscript());
+  // Without an exact match, guess the most recent transcript, only inside Claude Code (elsewhere it
+  // would be an older Claude Code session of the project) and unless the user named the session.
+  const file = exact ?? (flags.session || !inClaudeCode ? null : findTranscript());
   if (!file) {
     console.log(inClaudeCode || flags.session
       ? 'Transcript introuvable (passer --session <id>). Taille de contexte inconnue.'
-      : "Taille de contexte non mesurable : pas de transcript Claude Code pour ce projet. L'estimer (voir references/autres-agents.md).");
+      : "Taille de contexte non mesurable hors Claude Code. L'estimer (voir references/autres-agents.md).");
     return;
   }
   const { turns, prompts } = parseTranscript(file);
