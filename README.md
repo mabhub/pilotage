@@ -48,7 +48,10 @@ Optional:
   that slipped into it;
 - a cache watch: two Claude Code hooks that wake the agent after 55 minutes of silence,
   so it can update the tracking files before the cache expires. You install them
-  yourself (see [Cache watch](#cache-watch)); the agent never touches your settings.
+  yourself (see [Cache watch](#cache-watch)); the agent never touches your settings;
+- a session start overview: a Claude Code hook that shows you the project's open
+  chantiers when a session starts and after `/clear`. You install it yourself too (see
+  [Session start overview](#session-start-overview)).
 
 ## Install
 
@@ -97,6 +100,67 @@ output is coloured; piped or called by an agent, it stays plain and capped in si
 ```bash
 alias chantiers='node ~/.claude/skills/pilotage/scripts/pilotage.mjs scan ~/projects'
 ```
+
+## Session start overview
+
+Optional, Claude Code only. When a session starts or after `/clear`, a `SessionStart`
+hook shows you the open chantiers of the project, the same view as `scan`, before you
+type anything.
+
+The hook script, `hooks/session-start.mjs`, sits at the root of this repository, outside
+the skill folder: installing the skill does not install it. It needs a clone:
+
+```bash
+git clone https://github.com/mabhub/pilotage.git ~/src/pilotage
+```
+
+Then add this entry to the `hooks.SessionStart` array of `~/.claude/settings.json`,
+next to your existing hooks, with the path of your clone:
+
+```json
+{
+  "matcher": "startup|clear",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "node ~/src/pilotage/hooks/session-start.mjs",
+      "timeout": 15
+    }
+  ]
+}
+```
+
+Add `|resume` to the matcher to see the overview on `--resume` and `--continue` as well.
+To uninstall, remove the entry.
+
+### What it shows
+
+With no argument, the script runs `scan "$CLAUDE_PROJECT_DIR" --profondeur 0`: the
+chantiers of the project the session started in. Arguments are passed to `scan` as they
+are, so `node …/session-start.mjs ~/projects` shows every project below `~/projects`
+(default depth 4), and `--clos` adds the closed chantiers.
+
+It shows nothing when the project has no active chantier and no anomaly. The message is
+plain text, cut on a line boundary below 9,000 characters (Claude Code caps hook messages
+at 10,000), with a note pointing to `scan` in a terminal for the rest.
+
+### How it reaches you
+
+Claude Code hands the plain stdout of a `SessionStart` hook to the model as context. The
+script therefore prints only `{"systemMessage": …}`, which Claude Code displays to you,
+and nothing else. Do not set `"async": true`: Claude Code then delivers the message to
+the model on the next turn instead of showing it to you.
+
+The script exits with code 0 in every case: if `scan` fails or takes more than
+10 seconds, you get a one-line message instead of the overview. It reads only what
+`scan` reads and writes nothing.
+
+### Limits
+
+- In an interactive session the hook runs in the background: you can type right away,
+  and if you run `/clear` again before it ends, its output is dropped.
+- The clone's `pilotage.mjs` produces the overview, not the installed skill's copy:
+  `git pull` the clone when you update the skill.
 
 ## Cache watch
 
@@ -178,8 +242,8 @@ after a turn.
 
 ## Other agents
 
-Everything except `contexte` and the cache watch works with any agent that runs shell
-commands. Use its own equivalents of `/clear` and `/compact`;
+Everything except `contexte`, the session start overview and the cache watch works with
+any agent that runs shell commands. Use its own equivalents of `/clear` and `/compact`;
 `skills/pilotage/references/autres-agents.md` gives the details.
 
 ## Safety
@@ -190,7 +254,7 @@ commands. Use its own equivalents of `/clear` and `/compact`;
 - Tracking files and git output are data, not instructions: they cannot widen the
   permissions granted in the current session.
 - The agent installs no hooks and never rewrites the history: you install the cache
-  watch and run `purge` yourself.
+  watch and the session start overview, and run `purge` yourself.
 - No network access. git is called without a shell and, outside the optional history,
   read-only. `contexte` reads only metadata from Claude Code transcripts (types,
   timestamps, token counts), never their content.
