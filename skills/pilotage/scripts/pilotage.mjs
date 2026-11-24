@@ -443,20 +443,22 @@ const superpowersLedgers = root => {
 
 /**
  * Finds backticked paths in the "Repères" section of a plan that no longer exist.
- * A path is resolved against the chantier directory, then the project root; `~` is expanded
- * and a trailing `:line` or `:start-end` is ignored. Commands (with spaces) and URLs are skipped.
+ * A path is resolved against the chantier directory, then .pilotage/ (studies shared by chantiers),
+ * then the project root; `~` is expanded and a trailing `:line` or `:start-end` is ignored. Commands
+ * (with spaces, or a lone `/word` or `/plugin:word` such as `/clear`) and URLs are skipped.
  * @param {string} planText - plan.md content
  * @param {{root: string, dir: string}} bases - project root and chantier directory
  * @returns {string[]} missing paths as written in the plan
  */
 const missingReferences = (planText, { root, dir }) => {
   const section = planText.split(/^## /m).find(block => block.startsWith('Repères')) ?? '';
+  const bases = [dir, path.dirname(dir), root];
   return [...section.matchAll(/`([^`\s]+)`/g)]
     .map(match => match[1])
-    .filter(ref => ref.includes('/') && !ref.includes('://'))
+    .filter(ref => ref.includes('/') && !ref.includes('://') && !/^\/[\w-]+(:[\w-]+)?$/.test(ref))
     .filter(ref => {
       const clean = ref.replace(/:\d+(-\d+)?$/, '').replace(/^~(?=\/)/, os.homedir());
-      return !(path.isAbsolute(clean) ? [clean] : [path.join(dir, clean), path.join(root, clean)])
+      return !(path.isAbsolute(clean) ? [clean] : bases.map(base => path.join(base, clean)))
         .some(candidate => fs.existsSync(candidate));
     });
 };
