@@ -286,3 +286,11 @@ test('scan names the project instead of the scan root when it finds only one', t
   const empty = spawnSync(process.execPath, [SCRIPT, 'scan', path.join(root, 'seul', '.pilotage')], { encoding: 'utf8' }).stdout;
   assert.match(empty, /— 0 projet suivi, 0 chantier actif/, 'no project: the scan root stays');
 });
+
+test('scan shows the home directory as ~ only for paths inside it', t => {
+  const { root, project, plan, run } = sandbox(t);
+  project('maison', { Actifs: [line('a', 'objectif', daysAgo(1))] });
+  plan('maison', 'a');
+  assert.match(run([], { HOME: root }).stdout, /^Chantiers de ~\/maison — /);
+  assert.match(run([], { HOME: path.join(root, 'mai') }).stdout, new RegExp(`^Chantiers de ${path.join(root, 'maison')} — `), 'a sibling sharing a prefix keeps its path');
+});

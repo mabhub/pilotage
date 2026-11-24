@@ -96,6 +96,17 @@ const chantierDir = (root, slug) => {
 const SHORT_FLAGS = { '-s': 'short', '-g': 'group' };
 
 /**
+ * A path with the home directory shown as `~`, only when the path is inside it: a plain string replace
+ * would also turn `/home/user2` into `~2`, or a home path nested in another tree into `/mnt/copy~`.
+ * @param {string} file - absolute path
+ * @returns {string} path for display
+ */
+const tildePath = file => {
+  const home = os.homedir();
+  return file === home || file.startsWith(`${home}${path.sep}`) ? `~${file.slice(home.length)}` : file;
+};
+
+/**
  * Parses `--key value` flags, value-less boolean flags (long or one-letter form) and positional arguments.
  * @param {string[]} argv - raw arguments
  * @param {Set<string>} [booleans] - flags that take no value (they are set to 'true')
@@ -779,7 +790,7 @@ const veilleStatus = (root, inClaudeCode) => {
     ?? settings.findLast(({ env }) => env?.PILOTAGE_VEILLE_DELAI !== undefined)?.env.PILOTAGE_VEILLE_DELAI
     ?? process.env.PILOTAGE_VEILLE_DELAI;
   const delay = Number.isInteger(Number(raw)) && Number(raw) >= 1 ? Number(raw) : 3300;
-  return `Veille cache : active (réveil à ${Math.round(delay / 60)} min, ${armer.file.replace(os.homedir(), '~')})`;
+  return `Veille cache : active (réveil à ${Math.round(delay / 60)} min, ${tildePath(armer.file)})`;
 };
 
 /**
@@ -1162,7 +1173,7 @@ const cmdScan = ({ flags, positional }) => {
     .map(({ name, otherSections }) => named(name, otherSections.join(' · ')));
   const anomalies = projects.flatMap(({ name, anomalies: list }) => list.map(anomaly => named(name, anomaly)));
   const closed = projects.flatMap(({ closed: list }) => list).toSorted(byDateDesc);
-  const shown = dir => printable(dir).replace(os.homedir(), '~');
+  const shown = dir => tildePath(printable(dir));
   const group = Boolean(flags.group) && !single;
   const layout = scanLayout({ short: Boolean(flags.short), group, withProject: !group && !single, textMax: scanTextMax() });
   const header = [
