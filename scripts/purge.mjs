@@ -9,7 +9,8 @@
  *
  * Rewrites the whole history to replace every match of the patterns (motifs.mjs), then checks
  * that no object, unreachable ones included, still holds one. Only counts are printed: the
- * matches may be secrets. Writes only inside .pilotage/.git; the project repository is only read.
+ * matches may be secrets. Writes only inside .pilotage/ (its .git, and filter-branch's temporary
+ * .git-rewrite/); the project repository is only read.
  * Output is French (user-facing).
  */
 import fs from 'node:fs';

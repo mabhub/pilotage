@@ -584,3 +584,13 @@ test('a leftover filter-branch folder is never committed', t => {
   assert.equal(res.status, 0, res.stderr);
   assert.ok(!s.miniGit('ls-files').includes('.git-rewrite'), s.miniGit('ls-files'));
 });
+
+test('the installed skill holds no history rewrite', () => {
+  // The purge lives in scripts/ at the repository root, outside the skill: security scanners
+  // flag an installed skill that ships filter-branch, reflog expiry or gc pruning.
+  const skillDir = path.join(path.dirname(SCRIPT), '..');
+  const offenders = fs.readdirSync(skillDir, { recursive: true })
+    .filter(name => fs.statSync(path.join(skillDir, name)).isFile())
+    .filter(name => /filter-branch|reflog|gc --prune|rm -rf/i.test(fs.readFileSync(path.join(skillDir, name), 'utf8')));
+  assert.deepEqual(offenders, []);
+});

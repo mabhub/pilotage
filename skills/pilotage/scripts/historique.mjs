@@ -127,7 +127,7 @@ export const initHistory = ({ base, root, inGit }) => {
   if (problem) throw new HistoryError(problem);
   const init = runGit(['init', '-q', base], { cwd: base });
   if (!init.ok) throw new HistoryError(`ERREUR : git init a échoué (${init.stderr.split('\n')[0]}).`);
-  // .git-rewrite: temporary checkout of a history rewrite (see the repository README); a leftover may hold a secret.
+  // .git-rewrite: temporary checkout created by scripts/purge.mjs of the repository; a leftover may hold a secret.
   // A git template without info/ (init.templateDir, GIT_TEMPLATE_DIR) leaves it missing.
   const infoDir = path.join(base, '.git', 'info');
   fs.mkdirSync(infoDir, { recursive: true });

@@ -246,7 +246,7 @@ yourself, never the agent.
 The script, `scripts/purge.mjs`, sits at the root of this repository with its helpers
 (`purge-filtre.mjs`, `motifs.mjs`). This `scripts/` folder is not `skills/pilotage/scripts/`:
 installing the skill does not install it. It needs a clone, as for the
-[session start overview](#session-start-overview).
+[session start overview](#session-start-overview); `git pull` it first.
 
 1. Remove the secret from the current tracking files, or the purge refuses to run.
 2. Write a patterns file **outside `.pilotage/`** (inside, it would be committed; the
