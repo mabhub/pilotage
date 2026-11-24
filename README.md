@@ -88,7 +88,7 @@ The agent drives the bundled script, `skills/pilotage/scripts/pilotage.mjs`:
 | `reprise [<slug>] [--entrees N]` | print what a new session needs to resume |
 | `contexte [--session <id>]` | measure the current session (Claude Code only) |
 | `point <slug>` | optional history: commit a checkpoint |
-| `scan [<folder>] [--profondeur N] [--clos] [--short\|-s] [--group\|-g]` | list the chantiers of every project below a folder; `--short`: one line per chantier, `--group`: grouped by project |
+| `scan [<folder>] [--profondeur N] [--clos] [--short\|-s] [--desc\|-d] [--group\|-g]` | list the chantiers of every project below a folder; `--short`: one aligned line per chantier, without description unless `--desc`; `--group`: grouped by project |
 
 `scan` is also handy on its own, with no agent and no tokens spent. In a terminal its
 output is coloured; piped or called by an agent, it stays plain and capped in size.
@@ -132,10 +132,12 @@ To uninstall, remove the entry.
 ### What it shows
 
 With no argument, the script runs `scan "$CLAUDE_PROJECT_DIR" --profondeur 0 --short`:
-the chantiers of the project the session started in, one line each. Arguments are passed
-to `scan` as they are, so `node …/session-start.mjs ~/projects` shows every project below
-`~/projects` (default depth 4) on two lines per chantier, `-s` keeps one line, `-g` groups
-them by project, and `--clos` adds the closed chantiers.
+the chantiers of the project the session started in, one line each: chantier, date of the
+last checkpoint and ids waiting for the user, in aligned columns. Arguments are passed to
+`scan` as they are, so `node …/session-start.mjs ~/projects` shows every project below
+`~/projects` (default depth 4) on two lines per chantier with goal and step, `-s` keeps one
+line, `-d` adds the goal and step to it (clipped at 200 characters: the hook cannot know
+the terminal width), `-g` groups them by project, and `--clos` adds the closed chantiers.
 
 It shows nothing when the project has no active chantier and no anomaly. The message is
 plain text, cut on a line boundary below 9,000 characters (Claude Code caps hook messages

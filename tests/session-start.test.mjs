@@ -69,7 +69,7 @@ test('hook shows the active chantiers of the session project as a systemMessage'
   assert.equal(stderr, '');
   const text = message(stdout);
   assert.match(text, /^Chantiers de .* — 1 chantier actif\n/);
-  assert.match(text, /\nalpha · maj [^\n]* — objectif alpha · étape : 2$/, 'one line per chantier by default');
+  assert.match(text, /\nalpha  maj \S+ \(0 j\)$/, 'one line per chantier, without description, by default');
 });
 
 test('hook prints nothing when the project has no active chantier or no tracking', t => {
@@ -104,7 +104,7 @@ test('hook never emits colour codes, even with FORCE_COLOR', t => {
 
 test('hook keeps the systemMessage under the 10,000-character cap, cut on a line boundary', t => {
   const { root, project, run } = sandbox(t);
-  project('.', Array.from({ length: 120 }, (_, i) => [`chantier-${String(i).padStart(3, '0')}`, `objectif ${'x'.repeat(150)}`]));
+  project('.', Array.from({ length: 400 }, (_, i) => [`chantier-${String(i).padStart(3, '0')}`, `objectif ${'x'.repeat(150)}`]));
   const text = message(run().stdout);
   assert.ok(text.length <= 10_000, `length ${text.length}`);
   const note = '\n… coupé : lancer `pilotage.mjs scan` dans un terminal pour tout voir';

@@ -165,7 +165,8 @@ test('scan output stays within budget when not in a terminal', t => {
   assert.ok(stdout.length < 26_000, `output of ${stdout.length} characters`);
   assert.match(stdout, /…/, 'long text clipped');
   assert.match(stdout, /^ALERTE[^\n]*--profondeur, --short, ou retirer --clos/);
-  assert.match(run(['--short']).stdout, /^ALERTE[^\n]*--profondeur, ou retirer --clos/, 'no --short advice when already short');
+  assert.match(run(['--short', '--desc']).stdout, /^ALERTE[^\n]*--profondeur, retirer --desc, ou retirer --clos/, 'no --short advice when already short');
+  assert.doesNotMatch(run(['--short']).stdout, /ALERTE/, 'short lines without description fit the budget');
 });
 
 test('scan styles its output only when colour is possible', t => {
@@ -226,17 +227,42 @@ test('dates follow the local time zone, not UTC', t => {
   assert.match(s.run([], { TZ: timeZone }).stdout, new RegExp(`\\ndemo · maj ${local} \\(0 j\\)`));
 });
 
-test('scan --short prints one line per chantier, clipped to the width', t => {
+test('scan --short prints one aligned line per chantier, without description unless --desc', t => {
   const { project, plan, run } = sandbox(t);
-  project('p', { Actifs: [line('a', 'objectif court', daysAgo(1)), line('b', `long ${'x'.repeat(300)}`, daysAgo(2))] });
+  project('p', { Actifs: [line('a', 'objectif court', daysAgo(1)), line('bbbb', `long ${'x'.repeat(300)}`, daysAgo(2))] });
   plan('p', 'a', { pending: ['- [question Q2] choisir'] });
-  plan('p', 'b');
+  plan('p', 'bbbb');
   for (const args of [['--short'], ['-s']]) {
     const { status, stdout } = run(args);
     assert.equal(status, 0);
-    assert.match(stdout, new RegExp(`=== Actifs \\(plus récents d'abord\\) ===\\na · maj ${daysAgo(1)} \\(1 j\\) · attend : Q2 — objectif court\\nb · maj [^\\n]*— long x+…\\n?$`));
+    assert.match(stdout, new RegExp(`=== Actifs \\(plus récents d'abord\\) ===\\na {5}maj ${daysAgo(1)} \\(1 j\\)  attend : Q2\\nbbbb  maj ${daysAgo(2)} \\(2 j\\)\\n?$`));
+  }
+  for (const args of [['--short', '--desc'], ['-s', '-d']]) {
+    const { stdout } = run(args);
+    assert.match(stdout, new RegExp(`\\na {5}maj ${daysAgo(1)} \\(1 j\\)  attend : Q2 — objectif court\\nbbbb  maj ${daysAgo(2)} \\(2 j\\) {3}— long x+…\\n?$`), 'description right after the last column, not padded');
     assert.ok(stdout.split('\n').every(row => row.length <= 202), 'lines within SCAN_TEXT_MAX + 2');
   }
+  assert.match(run(['--desc']).stdout, new RegExp(`\\na · maj ${daysAgo(1)} \\(1 j\\) · attend : Q2\\n  objectif court\\n`), '--desc alone keeps the two-line layout');
+});
+
+test('scan --short --desc keeps descriptions when one chantier has a long waiting list', t => {
+  const { project, plan, run } = sandbox(t);
+  project('p', { Actifs: [line('a', 'objectif court', daysAgo(1)), line('b', 'objectif chargé', daysAgo(2))] });
+  plan('p', 'a');
+  plan('p', 'b', { pending: Array.from({ length: 40 }, (_, i) => `- [question Q${i + 1}] point ${i + 1}`) });
+  assert.match(run(['-s', '-d']).stdout, new RegExp(`\\na  maj ${daysAgo(1)} \\(1 j\\) {3}— objectif court\\n`));
+});
+
+test('scan --short aligns columns on visible width when styled', t => {
+  const { project, plan, run } = sandbox(t);
+  project('p', { Actifs: [line('court', 'objectif', daysAgo(1)), line('nettement-plus-long', 'objectif', daysAgo(2))] });
+  plan('p', 'court', { pending: ['- [question Q1] choisir'] });
+  plan('p', 'nettement-plus-long');
+  const { stdout } = run(['-s'], { FORCE_COLOR: '1' });
+  assert.match(stdout, /\x1b\[/, 'styled output');
+  const rows = stdout.replace(/\x1b\[[0-9;]*m/g, '').split('\n').filter(row => row.includes(' maj '));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(row => row.indexOf(' maj ')), [20, 20], 'dates start at the same column');
 });
 
 test('scan --group lists chantiers under their project, most active project first', t => {
@@ -261,7 +287,14 @@ test('scan --group lists chantiers under their project, most active project firs
     `  moyen · maj ${daysAgo(5)} \\(5 j\\)`,
   ].join('\\n')));
   assert.match(grouped, new RegExp(`=== Clos \\(1, par projet, plus récents d'abord\\) ===\\nalpha \\(1\\)\\n  fini · clos ${daysAgo(30)} — résultat`));
-  assert.match(run(['-g', '-s']).stdout, new RegExp(`alpha \\(2\\)\\n  neuf · maj ${daysAgo(1)} \\(1 j\\) — objectif neuf\\n  vieux · [^\\n]*— objectif vieux\\nbeta \\(1\\)\\n  moyen · `));
+  assert.match(run(['-g', '-s']).stdout, new RegExp(`alpha \\(2\\)\\n  neuf   maj ${daysAgo(1)} \\(1 j\\)\\n  vieux  maj ${daysAgo(20)} \\(20 j\\)\\nbeta \\(1\\)\\n  moyen  maj ${daysAgo(5)} \\(5 j\\)\\n`), 'columns aligned across projects');
+  assert.match(run(['-s']).stdout, new RegExp([
+    `alpha  neuf   maj ${daysAgo(1)} \\(1 j\\)`,
+    `beta   moyen  maj ${daysAgo(5)} \\(5 j\\)`,
+    `alpha  vieux  maj ${daysAgo(20)} \\(20 j\\)`,
+  ].join('\\n')), 'project column aligned too');
+  assert.match(run(['-g', '-s', '--clos']).stdout, new RegExp(`=== Clos \\(1, par projet, plus récents d'abord\\) ===\\nalpha \\(1\\)\\n  fini  clos ${daysAgo(30)}\\n?$`), 'closed: no result in --short');
+  assert.match(run(['-g', '-s', '-d', '--clos']).stdout, new RegExp(`\\n  fini  clos ${daysAgo(30)} — résultat\\n?$`), 'closed: result with --desc');
 });
 
 test('scan names the project instead of the scan root when it finds only one', t => {

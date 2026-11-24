@@ -7,7 +7,7 @@
  * outside the skill folder on purpose: it is not part of what the agent loads or runs.
  *
  *   node <clone>/hooks/session-start.mjs                       project of the session, depth 0, one line per chantier
- *   node <clone>/hooks/session-start.mjs <dossier> [--profondeur N] [--clos] [-s] [-g]   passed to `scan` as is
+ *   node <clone>/hooks/session-start.mjs <dossier> [--profondeur N] [--clos] [-s] [-d] [-g]   passed to `scan` as is
  *
  * Output contract, from the hooks reference (https://code.claude.com/docs/en/hooks):
  * - only JSON on stdout: plain stdout of a SessionStart hook is added to the model's context, a

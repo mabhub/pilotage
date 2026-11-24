@@ -16,10 +16,11 @@
  *                                                cache watch hooks status (Claude Code transcripts only; the session
  *                                                defaults to $CLAUDE_CODE_SESSION_ID)
  *   point <slug>                                 history on: commit .pilotage/ at the end of a checkpoint
- *   scan [<dossier>] [--profondeur N] [--clos] [--short|-s] [--group|-g]
+ *   scan [<dossier>] [--profondeur N] [--clos] [--short|-s] [--desc|-d] [--group|-g]
  *                                                list the chantiers of every project found below a folder (read-only:
  *                                                INDEX.md, chantier folder names, « En attente » of plan.md); --short
- *                                                prints one line per chantier, --group groups them by project
+ *                                                prints one aligned line per chantier, without description unless
+ *                                                --desc; --group groups them by project
  *
  * History on (.pilotage/.git): `contexte` and `reprise` first commit pending changes (catch-up).
  *
@@ -92,7 +93,7 @@ const chantierDir = (root, slug) => {
 };
 
 // One-letter forms of boolean flags.
-const SHORT_FLAGS = { '-s': 'short', '-g': 'group' };
+const SHORT_FLAGS = { '-s': 'short', '-g': 'group', '-d': 'desc' };
 
 /**
  * A path with the home directory shown as `~`, only when the path is inside it: a plain string replace
@@ -111,7 +112,7 @@ const tildePath = file => {
  * @param {Set<string>} [booleans] - flags that take no value (they are set to 'true')
  * @returns {{flags: Object<string,string>, positional: string[]}} parsed arguments
  */
-const parseArgs = (argv, booleans = new Set(['git', 'clos', 'short', 'group'])) => argv.reduce(
+const parseArgs = (argv, booleans = new Set(['git', 'clos', 'short', 'group', 'desc'])) => argv.reduce(
   (acc, arg, i, all) => {
     if (acc.skip) return { ...acc, skip: false };
     if (Object.hasOwn(SHORT_FLAGS, arg)) return { ...acc, flags: { ...acc.flags, [SHORT_FLAGS[arg]]: 'true' } };
@@ -1054,27 +1055,54 @@ const byDateDesc = (a, b) => (b.date ?? '').localeCompare(a.date ?? '')
   || a.project.localeCompare(b.project) || a.slug.localeCompare(b.slug);
 
 /**
- * Head line of an active chantier: where and how fresh.
+ * Cells of an active chantier's head: project (empty when not shown), chantier, freshness, waiting ids (empty
+ * when none).
  * Styles only apply in a terminal: styleText drops them when stdout is piped or redirected (an agent's
- * call), and honours NO_COLOR / FORCE_COLOR. Every head line keeps the same anchors (bold project when shown,
+ * call), and honours NO_COLOR / FORCE_COLOR. Every head keeps the same anchors (bold project when shown,
  * coloured chantier) so that heads stay distinct from descriptions; the age shows only in the date's colour.
  * No dim style: some terminals do not render it, and a dimmed line then loses every anchor.
  * @param {object} entry - active entry from scanProject
  * @param {boolean} withProject - false under a project heading (--group) or when there is a single project
- * @returns {string} head line
+ * @returns {string[]} cells
  */
-const activeHead = ({ project, slug, date, pending }, withProject) => {
+const activeCells = ({ project, slug, date, pending }, withProject) => {
   const age = date ? daysSince(date) : null;
   const dormant = age > DORMANT_DAYS;
   const when = date ? `maj ${date} (${age} j${dormant ? ', dormant' : ''})` : 'sans date';
   const ids = pending.filter(Boolean);
   const anonymous = pending.length - ids.length;
   const waiting = pending.length > 0
-    ? ` · ${styleText('yellow', `attend : ${[...ids, ...(anonymous > 0 ? [`${anonymous} sans id`] : [])].join(', ')}`)}`
+    ? styleText('yellow', `attend : ${[...ids, ...(anonymous > 0 ? [`${anonymous} sans id`] : [])].join(', ')}`)
     : '';
   const fresh = age !== null && age <= FRESH_DAYS;
   const shownWhen = fresh ? styleText('green', when) : dormant ? styleText('magenta', when) : when;
-  return `${withProject ? `${styleText('bold', project)} · ` : ''}${styleText('cyan', slug)} · ${shownWhen}${waiting}`;
+  return [withProject ? styleText('bold', project) : '', styleText('cyan', slug), shownWhen, waiting];
+};
+
+/** Visible length of a possibly styled string. */
+const visibleLength = text => stripVTControlCharacters(text).length;
+
+/**
+ * Widths of the columns of a table of cells; a column empty on every row gets width 0.
+ * @param {string[][]} rows - cells per row
+ * @returns {number[]} visible width per column
+ */
+const columnWidths = rows => (rows[0] ?? []).map((_, i) => Math.max(...rows.map(row => visibleLength(row[i]))));
+
+/**
+ * Cells padded to their column width and joined by two spaces; columns of width 0 are left out. The last
+ * column is not padded: a description that follows it starts right after it, instead of after the longest
+ * cell of the column (one long waiting list would otherwise leave no room for any description).
+ * Padding goes after the style codes, so that it never takes the cell's colour.
+ * @param {string[]} cells - possibly styled cells
+ * @param {number[]} widths - column widths
+ * @returns {string} padded line, ending with two spaces when its last cell is empty
+ */
+const aligned = (cells, widths) => {
+  const kept = cells.flatMap((cell, i) => (widths[i] > 0 ? [{ cell, width: widths[i] }] : []));
+  return kept
+    .map(({ cell, width }, i) => (i < kept.length - 1 ? cell + ' '.repeat(width - visibleLength(cell)) : cell))
+    .join('  ');
 };
 
 /**
@@ -1086,28 +1114,40 @@ const activeHead = ({ project, slug, date, pending }, withProject) => {
  * @returns {string} line
  */
 const oneLine = (head, text, width) => {
-  const room = width - stripVTControlCharacters(head).length - 3;
+  const room = width - visibleLength(head) - 3;
   return room > 1 && text ? `${head} — ${clip(text, room)}` : head;
 };
 
 /**
- * Layout of the chantier lists: one line per chantier (--short) or two; project on every line, as a
- * heading (--group), or nowhere (single project, already named in the header).
- * @param {{short: boolean, group: boolean, withProject: boolean, textMax: number}} options - layout options
- * @returns {{active: function(object): string, closed: function(object): string}} formatters
+ * Layout of the chantier lists: one aligned line per chantier (--short), without its description unless
+ * --desc, or two lines; project on every line, as a heading (--group), or nowhere (single project, already
+ * named in the header). Column widths in --short are computed over the whole list, so that they stay the
+ * same under every project heading.
+ * @param {{short: boolean, desc: boolean, group: boolean, withProject: boolean, textMax: number}} options - layout options
+ * @returns {{active: function(object[]): function(object): string, closed: function(object[]): function(object): string}}
+ *   for each list, a function that takes the whole list and returns the formatter of one entry
  */
-const scanLayout = ({ short, group, withProject, textMax }) => {
+const scanLayout = ({ short, desc, group, withProject, textMax }) => {
   const indent = group ? '  ' : '';
   const lineMax = textMax + 2;
+  const shortFormat = (entries, cellsOf) => {
+    const widths = columnWidths(entries.map(cellsOf));
+    return entry => {
+      const head = indent + aligned(cellsOf(entry), widths);
+      return (desc ? oneLine(head, entry.text, lineMax) : head).trimEnd();
+    };
+  };
+  const closedCells = ({ project, slug, date }) => [withProject ? project : '', slug, `clos ${date ?? '?'}`];
   return {
-    active: entry => {
-      const head = indent + activeHead(entry, withProject);
-      return short
-        ? oneLine(head, entry.text, lineMax)
-        : `${head}\n${indent}  ${clip(entry.text, lineMax - indent.length - 2)}`;
-    },
-    closed: ({ project, slug, date, text }) => indent
-      + clip(`${withProject ? `${project} · ` : ''}${slug} · clos ${date ?? '?'} — ${text}`, lineMax - indent.length),
+    active: entries => (short
+      ? shortFormat(entries, entry => activeCells(entry, withProject))
+      : entry => {
+        const head = indent + activeCells(entry, withProject).filter(Boolean).join(' · ');
+        return `${head}\n${indent}  ${clip(entry.text, lineMax - indent.length - 2)}`;
+      }),
+    closed: entries => (short
+      ? shortFormat(entries, closedCells)
+      : entry => indent + clip(`${closedCells(entry).filter(Boolean).join(' · ')} — ${entry.text}`, lineMax - indent.length)),
   };
 };
 
@@ -1133,8 +1173,9 @@ const listChantiers = (entries, format, group) => (group
 const scanTitle = title => styleText('bold', `=== ${title} ===`);
 
 /**
- * `scan [<racine>] [--profondeur N] [--clos] [--short|-s] [--group|-g]`: list the chantiers of every project
- * found below a folder, on two lines each or one (--short), the project on every line or as a heading (--group).
+ * `scan [<racine>] [--profondeur N] [--clos] [--short|-s] [--desc|-d] [--group|-g]`: list the chantiers of every
+ * project found below a folder, on two lines each or one (--short, description only with --desc), the project
+ * on every line or as a heading (--group).
  * Read-only; meant to be run by the user in a terminal as well as by an agent. Output is capped at
  * OUTPUT_BUDGET characters, except in a terminal.
  * @param {{flags: Object<string,string>, positional: string[]}} args - parsed arguments
@@ -1143,7 +1184,7 @@ const cmdScan = ({ flags, positional }) => {
   const root = path.resolve(positional[0] ?? process.cwd());
   const depth = flags.profondeur === undefined ? SCAN_DEFAULT_DEPTH : Number(flags.profondeur);
   if (!Number.isInteger(depth) || depth < 0 || depth > SCAN_MAX_DEPTH || !fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
-    console.error(`Usage : scan [<dossier>] [--profondeur 0-${SCAN_MAX_DEPTH}] [--clos] [--short|-s] [--group|-g]`);
+    console.error(`Usage : scan [<dossier>] [--profondeur 0-${SCAN_MAX_DEPTH}] [--clos] [--short|-s] [--desc|-d] [--group|-g]`);
     process.exit(1);
   }
   const { projects: dirs, unreadable: unreadableDirs } = findProjects(root, 0, depth);
@@ -1162,7 +1203,7 @@ const cmdScan = ({ flags, positional }) => {
   const closed = projects.flatMap(({ closed: list }) => list).toSorted(byDateDesc);
   const shown = dir => tildePath(printable(dir));
   const group = Boolean(flags.group) && !single;
-  const layout = scanLayout({ short: Boolean(flags.short), group, withProject: !group && !single, textMax: scanTextMax() });
+  const layout = scanLayout({ short: Boolean(flags.short), desc: Boolean(flags.desc), group, withProject: !group && !single, textMax: scanTextMax() });
   const header = [
     // A single project: its path says it all, the scan root, depth and project count add nothing.
     single
@@ -1174,7 +1215,7 @@ const cmdScan = ({ flags, positional }) => {
   const blocks = [
     header,
     active.length > 0
-      ? `${scanTitle(`Actifs${group ? ' par projet' : ''} (plus récents d'abord)`)}\n${listChantiers(active, layout.active, group)}`
+      ? `${scanTitle(`Actifs${group ? ' par projet' : ''} (plus récents d'abord)`)}\n${listChantiers(active, layout.active(active), group)}`
       : '',
     idle.length > 0 ? `${scanTitle(`Sans chantier actif (${idle.length})`)}\n${idle.join(', ')}` : '',
     others.length > 0 ? `${scanTitle('Autres sections')}\n${others.join('\n')}` : '',
@@ -1182,7 +1223,7 @@ const cmdScan = ({ flags, positional }) => {
       ? `${scanTitle('Anomalies')}\n${anomalies.map(anomaly => styleText('red', anomaly)).join('\n')}`
       : '',
     flags.clos && closed.length > 0
-      ? `${scanTitle(`Clos (${closed.length}${group ? ', par projet' : ''}, plus récents d'abord)`)}\n${listChantiers(closed, layout.closed, group)}`
+      ? `${scanTitle(`Clos (${closed.length}${group ? ', par projet' : ''}, plus récents d'abord)`)}\n${listChantiers(closed, layout.closed(closed), group)}`
       : '',
   ].filter(Boolean);
   const output = blocks.join('\n\n');
@@ -1192,7 +1233,7 @@ const cmdScan = ({ flags, positional }) => {
     return;
   }
   const cut = output.slice(0, output.lastIndexOf('\n', OUTPUT_BUDGET));
-  const remedies = ['restreindre le dossier', '--profondeur', ...(flags.short ? [] : ['--short'])].join(', ');
+  const remedies = ['restreindre le dossier', '--profondeur', ...(flags.short ? (flags.desc ? ['retirer --desc'] : []) : ['--short'])].join(', ');
   console.log(`ALERTE : sortie coupée à ${cut.length} caractères sur ${output.length} → ${remedies}, ou retirer --clos\n\n${cut}`);
 };
 
