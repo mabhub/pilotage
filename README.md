@@ -135,10 +135,11 @@ To uninstall, remove the entry.
 
 ### What it shows
 
-With no argument, the script runs `scan "$CLAUDE_PROJECT_DIR" --profondeur 0`: the
-chantiers of the project the session started in. Arguments are passed to `scan` as they
-are, so `node …/session-start.mjs ~/projects` shows every project below `~/projects`
-(default depth 4), and `--clos` adds the closed chantiers.
+With no argument, the script runs `scan "$CLAUDE_PROJECT_DIR" --profondeur 0 --short`:
+the chantiers of the project the session started in, one line each. Arguments are passed
+to `scan` as they are, so `node …/session-start.mjs ~/projects` shows every project below
+`~/projects` (default depth 4) on two lines per chantier, `-s` keeps one line, `-g` groups
+them by project, and `--clos` adds the closed chantiers.
 
 It shows nothing when the project has no active chantier and no anomaly. The message is
 plain text, cut on a line boundary below 9,000 characters (Claude Code caps hook messages

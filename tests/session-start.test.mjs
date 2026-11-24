@@ -69,8 +69,7 @@ test('hook shows the active chantiers of the session project as a systemMessage'
   assert.equal(stderr, '');
   const text = message(stdout);
   assert.match(text, /^Chantiers de .* — 1 chantier actif\n/);
-  assert.match(text, /alpha · maj/);
-  assert.match(text, /objectif alpha · étape : 2/);
+  assert.match(text, /\nalpha · maj [^\n]* — objectif alpha · étape : 2$/, 'one line per chantier by default');
 });
 
 test('hook prints nothing when the project has no active chantier or no tracking', t => {
@@ -87,7 +86,7 @@ test('hook stays at depth 0 by default and passes explicit arguments to scan', t
   const { root, project, run } = sandbox(t);
   project('sous/projet', [['profond', 'objectif profond']]);
   assert.equal(run().stdout, '', 'the session project itself has no tracking');
-  assert.match(message(run([root]).stdout), /\nprofond · maj/);
+  assert.match(message(run([root]).stdout), /\nprofond · maj [^\n]*\n  objectif profond/, 'explicit arguments: no --short added');
 });
 
 test('hook shows anomalies even without an active chantier', t => {
@@ -110,7 +109,7 @@ test('hook keeps the systemMessage under the 10,000-character cap, cut on a line
   assert.ok(text.length <= 10_000, `length ${text.length}`);
   const note = '\n… coupé : lancer `pilotage.mjs scan` dans un terminal pour tout voir';
   assert.ok(text.endsWith(note));
-  const full = spawnSync(process.execPath, [SCAN, 'scan', root, '--profondeur', '0'], { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } }).stdout;
+  const full = spawnSync(process.execPath, [SCAN, 'scan', root, '--profondeur', '0', '--short'], { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } }).stdout;
   assert.ok(full.length > 10_000, 'the sandbox overflows the cap');
   assert.ok(full.startsWith(`${text.slice(0, -note.length)}\n`), 'cut on a line boundary of the scan output');
 });

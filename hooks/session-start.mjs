@@ -6,7 +6,7 @@
  * Installed by hand by the user (README, « Session start overview »); the skill never installs it. It lives
  * outside the skill folder on purpose: it is not part of what the agent loads or runs.
  *
- *   node <clone>/hooks/session-start.mjs                       project of the session, depth 0
+ *   node <clone>/hooks/session-start.mjs                       project of the session, depth 0, one line per chantier
  *   node <clone>/hooks/session-start.mjs <dossier> [--profondeur N] [--clos] [-s] [-g]   passed to `scan` as is
  *
  * Output contract, from the hooks reference (https://code.claude.com/docs/en/hooks):
@@ -25,13 +25,14 @@ const MESSAGE_MAX = 9_000;
 const SCAN_TIMEOUT_MS = 10_000;
 
 /**
- * Arguments given to `scan`: the session's project at depth 0 by default, the caller's arguments otherwise.
+ * Arguments given to `scan`: the session's project at depth 0, one line per chantier, by default; the caller's
+ * arguments otherwise.
  * @param {string[]} args - command-line arguments of the hook
  * @returns {string[]} scan arguments
  */
 const scanArgs = args => (args.length > 0
   ? args
-  : [process.env.CLAUDE_PROJECT_DIR || process.cwd(), '--profondeur', '0']);
+  : [process.env.CLAUDE_PROJECT_DIR || process.cwd(), '--profondeur', '0', '--short']);
 
 /**
  * Whether the scan output has something to show: at least one active chantier, or an anomaly.
