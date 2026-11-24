@@ -88,7 +88,7 @@ The agent drives the bundled script, `skills/pilotage/scripts/pilotage.mjs`:
 | `reprise [<slug>] [--entrees N]` | print what a new session needs to resume |
 | `contexte [--session <id>]` | measure the current session (Claude Code only) |
 | `point <slug>` | optional history: commit a checkpoint |
-| `scan [<folder>] [--profondeur N] [--clos]` | list the chantiers of every project below a folder |
+| `scan [<folder>] [--profondeur N] [--clos] [--short\|-s] [--group\|-g]` | list the chantiers of every project below a folder; `--short`: one line per chantier, `--group`: grouped by project |
 
 You run `purge --motifs <file>` yourself, never the agent: it removes the values listed
 in `<file>` (secrets) by rewriting the whole optional history. The agent guides you

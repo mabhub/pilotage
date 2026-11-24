@@ -162,6 +162,8 @@ test('scan output stays within budget when not in a terminal', t => {
   assert.match(stdout, /^ALERTE : sortie coupée/);
   assert.ok(stdout.length < 26_000, `output of ${stdout.length} characters`);
   assert.match(stdout, /…/, 'long text clipped');
+  assert.match(stdout, /^ALERTE[^\n]*--profondeur, --short, ou retirer --clos/);
+  assert.match(run(['--short']).stdout, /^ALERTE[^\n]*--profondeur, ou retirer --clos/, 'no --short advice when already short');
 });
 
 test('scan styles its output only when colour is possible', t => {
@@ -220,4 +222,42 @@ test('dates follow the local time zone, not UTC', t => {
   assert.match(plan, new RegExp(`\\*\\*Ouvert le\\*\\* : ${local} `));
   s.project('p', { Actifs: [line('demo', 'objectif', local)] });
   assert.match(s.run([], { TZ: timeZone }).stdout, new RegExp(`p · demo · maj ${local} \\(0 j\\)`));
+});
+
+test('scan --short prints one line per chantier, clipped to the width', t => {
+  const { project, plan, run } = sandbox(t);
+  project('p', { Actifs: [line('a', 'objectif court', daysAgo(1)), line('b', `long ${'x'.repeat(300)}`, daysAgo(2))] });
+  plan('p', 'a', { pending: ['- [question Q2] choisir'] });
+  plan('p', 'b');
+  for (const args of [['--short'], ['-s']]) {
+    const { status, stdout } = run(args);
+    assert.equal(status, 0);
+    assert.match(stdout, new RegExp(`=== Actifs \\(plus récents d'abord\\) ===\\np · a · maj ${daysAgo(1)} \\(1 j\\) · attend : Q2 — objectif court\\np · b · maj [^\\n]*— long x+…\\n?$`));
+    assert.ok(stdout.split('\n').every(row => row.length <= 202), 'lines within SCAN_TEXT_MAX + 2');
+  }
+});
+
+test('scan --group lists chantiers under their project, most active project first', t => {
+  const { project, plan, run } = sandbox(t);
+  project('alpha', {
+    Actifs: [line('vieux', 'objectif vieux', daysAgo(20)), line('neuf', 'objectif neuf', daysAgo(1))],
+    Clos: [`- [fini](fini/plan.md) — résultat · clos ${daysAgo(30)}`],
+  });
+  plan('alpha', 'vieux');
+  plan('alpha', 'neuf');
+  project('beta', { Actifs: [line('moyen', 'objectif moyen', daysAgo(5))] });
+  plan('beta', 'moyen');
+  const grouped = run(['--group', '--clos']).stdout;
+  assert.match(grouped, new RegExp([
+    "=== Actifs par projet \\(plus récents d'abord\\) ===",
+    'alpha \\(2\\)',
+    `  neuf · maj ${daysAgo(1)} \\(1 j\\)`,
+    '    objectif neuf',
+    `  vieux · maj ${daysAgo(20)} \\(20 j\\)`,
+    '    objectif vieux',
+    'beta \\(1\\)',
+    `  moyen · maj ${daysAgo(5)} \\(5 j\\)`,
+  ].join('\\n')));
+  assert.match(grouped, new RegExp(`=== Clos \\(1, par projet, plus récents d'abord\\) ===\\nalpha \\(1\\)\\n  fini · clos ${daysAgo(30)} — résultat`));
+  assert.match(run(['-g', '-s']).stdout, new RegExp(`alpha \\(2\\)\\n  neuf · maj ${daysAgo(1)} \\(1 j\\) — objectif neuf\\n  vieux · [^\\n]*— objectif vieux\\nbeta \\(1\\)\\n  moyen · `));
 });

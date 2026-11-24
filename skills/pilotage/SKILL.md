@@ -277,7 +277,7 @@ Dans une session neuve :
 
 ## Vue d'ensemble de plusieurs projets
 
-`pilotage.mjs scan [<dossier>] [--profondeur N] [--clos]` cherche les projets qui ont un
+`pilotage.mjs scan [<dossier>] [--profondeur N] [--clos] [--short|-s] [--group|-g]` cherche les projets qui ont un
 `.pilotage/INDEX.md` sous le dossier (courant par défaut, profondeur 4) et affiche :
 
 - les chantiers actifs, du plus récent au plus ancien : projet, chantier, date du dernier
@@ -287,6 +287,10 @@ Dans une session neuve :
 - les projets suivis sans chantier actif, le compte des sections maison de l'index
   (« À suivre »…), les anomalies (chantier absent de l'index, ligne active sans `plan.md`) ;
 - avec `--clos`, les chantiers clos.
+
+`--short` (`-s`) tient chaque chantier sur une ligne (objectif coupé à la largeur) ;
+`--group` (`-g`) range les chantiers sous leur projet, le projet au chantier le plus
+récent en tête.
 
 Il ne descend ni dans les dossiers cachés ni dans `node_modules`, `vendor`, `venv`, et ne
 suit pas les liens symboliques ; les dossiers illisibles sont comptés, pas listés. Hors

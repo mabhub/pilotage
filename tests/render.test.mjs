@@ -17,8 +17,9 @@ test('titles keep replacement patterns and placeholders verbatim', t => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'pilotage-render-'));
   t.after(() => fs.rmSync(project, { recursive: true, force: true }));
   const run = args => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: project, encoding: 'utf8' });
-  // `$&` and `$'` are String.replace patterns; `{{DATE}}` is a placeholder of the same templates.
-  const titre = "Prix $& et $' {{DATE}}";
+  // `$&` and `$'` are String.replace patterns; `{{DATE}}` is a placeholder of the same templates;
+  // `toString`, `constructor` and `__proto__` are inherited by an object literal, as the flag table is.
+  const titre = "Prix $& et $' {{DATE}} toString constructor __proto__";
   const init = run(['init', '--chantier', 'demo', '--titre', titre]);
   assert.equal(init.status, 0, init.stderr);
   const plan = fs.readFileSync(path.join(project, '.pilotage', 'demo', 'plan.md'), 'utf8');
