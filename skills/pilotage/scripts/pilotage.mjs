@@ -16,7 +16,6 @@
  *                                                cache watch hooks status (Claude Code transcripts only; the session
  *                                                defaults to $CLAUDE_CODE_SESSION_ID)
  *   point <slug>                                 history on: commit .pilotage/ at the end of a checkpoint
- *   purge --motifs <fichier>                     history on: replace the patterns (secrets) in the whole history; run by the user
  *   scan [<dossier>] [--profondeur N] [--clos] [--short|-s] [--group|-g]
  *                                                list the chantiers of every project found below a folder (read-only:
  *                                                INDEX.md, chantier folder names, « En attente » of plan.md); --short
@@ -37,7 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { stripVTControlCharacters, styleText } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
-  HistoryError, catchUp, commitPoint, gitAvailable, historyActive, initHistory, projectLink, purgeHistory,
+  HistoryError, catchUp, commitPoint, gitAvailable, historyActive, initHistory, projectLink,
 } from './historique.mjs';
 
 const SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -880,20 +879,6 @@ const cmdPoint = ({ positional }) => {
   withHistoryErrors(() => commitPoint({ base, root, inGit, slug }).forEach(line => console.log(line)));
 };
 
-/**
- * `purge --motifs <file>`: removes secrets from the whole history of .pilotage/.
- * @param {{flags: Object<string,string>}} args - parsed arguments
- */
-const cmdPurge = ({ flags }) => {
-  const { root } = projectRoot();
-  const base = path.join(root, DIR_NAME);
-  if (historyActive(base) && !flags.motifs) {
-    console.error('Usage : purge --motifs <fichier>');
-    process.exit(1);
-  }
-  withHistoryErrors(() => purgeHistory({ base, patternsFile: flags.motifs }).forEach(line => console.log(line)));
-};
-
 // `scan` never descends into these: dependencies and virtual environments hold no project of their own
 // and can be huge. Hidden directories are skipped too (.git, .venv…), `.pilotage` itself included.
 const SCAN_SKIP = new Set(['node_modules', 'vendor', 'venv', '__pycache__']);
@@ -1217,13 +1202,12 @@ const COMMANDS = {
   reprise: cmdReprise,
   contexte: cmdContexte,
   point: cmdPoint,
-  purge: cmdPurge,
 };
 
 const [command, ...rest] = process.argv.slice(2);
 const handler = COMMANDS[command];
 if (!handler) {
-  console.error('Usage : pilotage.mjs <init|decision|modele|reprise|contexte|point|purge|scan> [options]');
+  console.error('Usage : pilotage.mjs <init|decision|modele|reprise|contexte|point|scan> [options]');
   process.exit(1);
 }
 handler(parseArgs(rest));

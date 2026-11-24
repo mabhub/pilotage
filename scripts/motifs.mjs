@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * motifs — patterns of the `purge` command (one per line: a literal value, or `regex:<source>`
+ * motifs — patterns of `scripts/purge.mjs` (one per line: a literal value, or `regex:<source>`
  * in JavaScript syntax). Error messages name the line, never its content: it may be a secret.
  */
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * purge-filtre — tree filter run by `git filter-branch` during `pilotage.mjs purge`.
+ * purge-filtre — tree filter run by `git filter-branch` during `scripts/purge.mjs`.
  *
  * Walks the checked-out tree (the working directory), replaces every match of the patterns read
  * from the file named by PILOTAGE_MOTIFS, and rewrites changed files in their original encoding.
@@ -18,7 +18,7 @@ import { decodeFile, parsePatterns, redact } from './motifs.mjs';
 const cwd = process.cwd();
 const inRewriteCheckout = path.basename(cwd) === 't' && path.basename(path.dirname(cwd)) === '.git-rewrite';
 if (!process.env.GIT_COMMIT || !process.env.PILOTAGE_MOTIFS || !inRewriteCheckout) {
-  console.error('purge-filtre : à lancer uniquement par `pilotage.mjs purge` (filtre de git filter-branch).');
+  console.error('purge-filtre : à lancer uniquement par `scripts/purge.mjs` (filtre de git filter-branch).');
   process.exit(2);
 }
 

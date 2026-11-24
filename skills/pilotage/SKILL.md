@@ -30,8 +30,7 @@ veille).
 Script : `node <dossier du skill>/scripts/pilotage.mjs <commande>`, lancé depuis la
 racine du projet. Commandes : `init`, `decision`, `modele`, `reprise`, `contexte`,
 plus `point` pour l'historique git facultatif (`references/historique.md`, à lire
-seulement si l'historique est actif ou demandé ; sa commande `purge` est lancée par
-l'utilisateur, jamais par l'agent). `scan` fait exception : il se lance depuis
+seulement si l'historique est actif ou demandé). `scan` fait exception : il se lance depuis
 n'importe quel dossier (voir « Vue d'ensemble de plusieurs projets »).
 `scripts/veille.mjs` sert à la veille facultative (voir « Veille avant expiration du
 cache ») : l'agent ne le lance pas.
@@ -345,8 +344,8 @@ Le suivi lui-même consomme des tokens. Pour qu'il reste rentable :
   à une et relues pour en retirer secrets et données privées. Un slug qui ne respecte pas le format
   `[a-z0-9-]` est refusé, donc aucune commande ne sort de `.pilotage/`.
 - **Historique git** (facultatif) : écritures limitées à `.pilotage/.git`, jamais de
-  remote. Un secret commité y reste après correction du fichier → `purge`, que
-  l'utilisateur lance lui-même. **Ne jamais lire un fichier de motifs qui contient des
-  valeurs**.
+  remote. Un secret commité y reste après correction du fichier : l'utilisateur suit
+  la section « Purge a secret » du README de mabhub/pilotage. **Ne jamais lire un
+  fichier de motifs qui contient des valeurs**.
 - **Hooks** : l'agent n'installe ni ne modifie aucun hook ; la veille est installée à la
   main par l'utilisateur.

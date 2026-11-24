@@ -83,48 +83,17 @@ $G show <sha>:<chantier>/connaissances.md     # une version passée
 
 Lire une version passée, oui. La restaurer : seulement à la demande de l'utilisateur.
 
-## Purge d'un secret
+## Secret commité
 
-Un secret commité reste dans tous les commits, même retiré du fichier. La purge réécrit
-tout l'historique : **l'utilisateur la lance lui-même**, l'agent l'y guide sans la
-lancer. Pour l'effacer :
-
-1. Retirer le secret des fichiers actuels (sinon la purge refuse).
-2. Écrire un fichier de motifs **hors de `.pilotage/`** (sinon il serait commité ; la
-   purge refuse aussi ce cas). Une ligne par valeur littérale, ou `regex:<motif>` en
-   syntaxe JavaScript. Les lignes vides sont ignorées. Les lignes `==>`, `glob:`,
-   `literal:`, une regex invalide ou qui correspond à la chaîne vide font refuser tout
-   le fichier ; l'erreur donne le numéro de la ligne, jamais son contenu.
-   - Une valeur littérale est écrite **par l'utilisateur**. L'agent peut écrire un motif
-     `regex:` (ce n'est pas le secret), mais **ne lit jamais le fichier** une fois
-     l'utilisateur passé dessus.
-3. L'utilisateur lance, depuis la racine du projet,
-   `node <dossier du skill>/scripts/pilotage.mjs purge --motifs <fichier>` :
-   rattrapage, réécriture de tout l'historique (`filter-branch`, chaque occurrence →
-   `***REMOVED***`), nettoyage (`reflog expire`, `gc --prune=now`), puis vérification
-   de tous les objets, même inaccessibles. Succès :
-   `Purge : <n> objet(s) contenaient un motif · <c> commit(s) réécrit(s) · vérification OK`.
-   Rien trouvé : `rien à réécrire`. Échec de vérification :
-   `ERREUR : vérification échouée …`.
-   La purge ne réécrit que le contenu des fichiers : un motif qui correspond aussi à un
-   commit (auteur, e-mail, sha, branche) est refusé avant toute réécriture. Préciser le
-   motif.
-4. La purge ne supprime jamais le fichier de motifs : il peut être le fichier qui
-   garde le secret ailleurs (`--motifs ~/.config/<outil>/token`). Elle rappelle son
-   chemin ; à l'utilisateur de le supprimer s'il l'a écrit pour l'occasion.
-
-Limites :
-
-- **La purge ne remplace pas la révocation** : un secret écrit quelque part doit être
-  considéré comme exposé et changé.
-- Les copies hors du dépôt imbriqué ne sont pas purgées : sauvegardes, dossiers
-  synchronisés, transcripts de session.
-- Dernier recours si la purge échoue : `rm -rf .pilotage/.git` puis `init --git`
-  (l'historique est perdu, les fichiers actuels restent), lancés par l'utilisateur.
+Un secret commité reste dans les commits passés, même retiré du fichier. Le considérer
+comme exposé et le faire changer. Pour le retirer aussi de l'historique, l'utilisateur
+suit la section « Purge a secret » du README de mabhub/pilotage, avec un script qui
+n'est pas installé avec le skill. L'agent peut l'y guider sans rien lancer, et ne lit
+jamais un fichier de motifs qui contient des valeurs.
 
 ## Identité ou git absents
 
-- `init --git`, `point` et `purge` s'arrêtent avec une erreur claire
+- `init --git` et `point` s'arrêtent avec une erreur claire
   (`ERREUR : identité git absente (user.name / user.email), aucun commit.` ou
   `git indisponible`). Corriger la config git de l'utilisateur, jamais imposer
   `-c user.*`.
@@ -135,8 +104,7 @@ Limites :
 ## Garde-fous
 
 - Le script n'écrit que dans `.pilotage/.git` ; le dépôt du projet est seulement lu.
-- Ce qui réécrit ou supprime l'historique (`purge`, dernier recours) est lancé par
-  l'utilisateur, jamais par l'agent.
+- L'agent ne réécrit jamais l'historique (voir « Secret commité »).
 - Jamais de remote, jamais de push : le suivi reste local.
 - Les sorties ne contiennent que des comptes, des noms de fichiers et des sha, jamais de
   contenu supprimé ni de motif.

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPLACEMENT, containsAny, decodeFile, parsePatterns, redact } from '../skills/pilotage/scripts/motifs.mjs';
+import { REPLACEMENT, containsAny, decodeFile, parsePatterns, redact } from '../scripts/motifs.mjs';
 
 test('literal and regex lines', () => {
   const [literal] = parsePatterns('abc.def\n');

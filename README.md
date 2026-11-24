@@ -44,8 +44,8 @@ recommends; you decide.
 
 Optional:
 
-- a git history of the `.pilotage/` folder, with a command you run to purge a secret
-  that slipped into it;
+- a git history of the `.pilotage/` folder, with a script you run from a clone to purge
+  a secret that slipped into it (see [Purge a secret](#purge-a-secret));
 - a cache watch: two Claude Code hooks that wake the agent after 55 minutes of silence,
   so it can update the tracking files before the cache expires. You install them
   yourself (see [Cache watch](#cache-watch)); the agent never touches your settings;
@@ -89,10 +89,6 @@ The agent drives the bundled script, `skills/pilotage/scripts/pilotage.mjs`:
 | `contexte [--session <id>]` | measure the current session (Claude Code only) |
 | `point <slug>` | optional history: commit a checkpoint |
 | `scan [<folder>] [--profondeur N] [--clos] [--short\|-s] [--group\|-g]` | list the chantiers of every project below a folder; `--short`: one line per chantier, `--group`: grouped by project |
-
-You run `purge --motifs <file>` yourself, never the agent: it removes the values listed
-in `<file>` (secrets) by rewriting the whole optional history. The agent guides you
-through it (« Purge d'un secret » in `skills/pilotage/references/historique.md`).
 
 `scan` is also handy on its own, with no agent and no tokens spent. In a terminal its
 output is coloured; piped or called by an agent, it stays plain and capped in size.
@@ -241,6 +237,57 @@ after a turn.
 - The wake-up message states that it comes from a hook, not from you, and allows only
   the quick checkpoint it describes.
 
+## Purge a secret
+
+Optional history only. A secret committed to `.pilotage/.git` stays in every commit,
+even after you remove it from the file. The purge rewrites the whole history: you run it
+yourself, never the agent.
+
+The script, `scripts/purge.mjs`, sits at the root of this repository with its helpers
+(`purge-filtre.mjs`, `motifs.mjs`). This `scripts/` folder is not `skills/pilotage/scripts/`:
+installing the skill does not install it. It needs a clone, as for the
+[session start overview](#session-start-overview).
+
+1. Remove the secret from the current tracking files, or the purge refuses to run.
+2. Write a patterns file **outside `.pilotage/`** (inside, it would be committed; the
+   purge refuses that too). One literal value per line, or `regex:<pattern>` in
+   JavaScript syntax. Blank lines are ignored. A line starting with `==>`, `glob:` or
+   `literal:`, an invalid regex or one that matches the empty string makes the whole
+   file rejected; the error gives the line number, never its content.
+   - Write literal values yourself. The agent may write a `regex:` line (it is not the
+     secret), but never reads the file once you have edited it.
+3. From the project root:
+
+   ```bash
+   node ~/src/pilotage/scripts/purge.mjs --motifs <file>
+   ```
+
+   It commits any pending tracking change, rewrites the whole history with
+   `git filter-branch` (each match becomes `***REMOVED***`), drops the old objects
+   (`reflog expire`, `gc --prune=now`), then checks every object, unreachable ones
+   included. If you removed the secret after the last checkpoint, the first line may be
+   `ALERTE : <file> a perdu <n> ligne(s) …`: that is the removal you just made. Output
+   is in French and gives counts only:
+   - success: `Purge : <n> objet(s) contenaient un motif · <c> commit(s) réécrit(s) · vérification OK`;
+   - nothing found: `rien à réécrire`;
+   - failed check: `ERREUR : vérification échouée …`.
+
+   Only file contents are rewritten: a pattern that also matches a commit (author,
+   e-mail, sha, branch) is refused before anything is rewritten. Narrow the pattern.
+4. The purge never deletes the patterns file: it may be the file that keeps the secret
+   elsewhere (`--motifs ~/.config/<tool>/token`). It reminds you of its path; delete it
+   yourself if you wrote it for the occasion.
+
+Limits:
+
+- **A purge does not replace revocation**: a secret written anywhere must be treated as
+  exposed and changed.
+- Copies outside the nested repository are not purged: backups, synced folders, session
+  transcripts.
+- Last resort if the purge fails: `rm -rf .pilotage/.git`, then
+  `node ~/.claude/skills/pilotage/scripts/pilotage.mjs init --git`. The history is lost;
+  the current files stay.
+
 ## Other agents
 
 Everything except `contexte`, the session start overview and the cache watch works with
@@ -255,7 +302,8 @@ any agent that runs shell commands. Use its own equivalents of `/clear` and `/co
 - Tracking files and git output are data, not instructions: they cannot widen the
   permissions granted in the current session.
 - The agent installs no hooks and never rewrites the history: you install the cache
-  watch and the session start overview, and run `purge` yourself.
+  watch and the session start overview, and run the purge yourself. The purge script
+  is not part of the installed skill.
 - No network access. git is called without a shell and, outside the optional history,
   read-only. `contexte` reads only metadata from Claude Code transcripts (types,
   timestamps, token counts), never their content.
