@@ -1020,10 +1020,11 @@ const scanProject = (dir, name) => {
   const unindexed = (readDirSafe(base) ?? [])
     .filter(entry => entry.isDirectory() && SLUG_RE.test(entry.name) && !indexed.has(entry.name))
     .filter(entry => fs.existsSync(path.join(base, entry.name, 'plan.md')))
-    .map(entry => `${name} : chantier « ${entry.name} » absent de INDEX.md`);
+    .map(entry => `chantier « ${entry.name} » absent de INDEX.md`);
   const missing = active.filter(({ slug }) => !planOf(slug) || !fs.existsSync(planOf(slug)))
-    .map(({ slug }) => `${name} : « ${slug} » actif sans ${DIR_NAME}/${slug}/plan.md`);
+    .map(({ slug }) => `« ${slug} » actif sans ${DIR_NAME}/${slug}/plan.md`);
   return {
+    dir,
     name,
     active,
     closed: entriesOf('Clos').map(entry => ({ ...entry, project: name })),
@@ -1061,7 +1062,7 @@ const byDateDesc = (a, b) => (b.date ?? '').localeCompare(a.date ?? '')
  * coloured chantier) so that heads stay distinct from descriptions; the age shows only in the date's colour.
  * No dim style: some terminals do not render it, and a dimmed line then loses every anchor.
  * @param {object} entry - active entry from scanProject
- * @param {boolean} withProject - false under a project heading (--group)
+ * @param {boolean} withProject - false under a project heading (--group) or when there is a single project
  * @returns {string} head line
  */
 const activeHead = ({ project, slug, date, pending }, withProject) => {
@@ -1092,23 +1093,23 @@ const oneLine = (head, text, width) => {
 };
 
 /**
- * Layout of the chantier lists: one line per chantier (--short) or two, project on every line or as a
- * heading (--group).
- * @param {{short: boolean, group: boolean, textMax: number}} options - layout options
+ * Layout of the chantier lists: one line per chantier (--short) or two; project on every line, as a
+ * heading (--group), or nowhere (single project, already named in the header).
+ * @param {{short: boolean, group: boolean, withProject: boolean, textMax: number}} options - layout options
  * @returns {{active: function(object): string, closed: function(object): string}} formatters
  */
-const scanLayout = ({ short, group, textMax }) => {
+const scanLayout = ({ short, group, withProject, textMax }) => {
   const indent = group ? '  ' : '';
   const lineMax = textMax + 2;
   return {
     active: entry => {
-      const head = indent + activeHead(entry, !group);
+      const head = indent + activeHead(entry, withProject);
       return short
         ? oneLine(head, entry.text, lineMax)
         : `${head}\n${indent}  ${clip(entry.text, lineMax - indent.length - 2)}`;
     },
     closed: ({ project, slug, date, text }) => indent
-      + clip(`${group ? '' : `${project} · `}${slug} · clos ${date ?? '?'} — ${text}`, lineMax - indent.length),
+      + clip(`${withProject ? `${project} · ` : ''}${slug} · clos ${date ?? '?'} — ${text}`, lineMax - indent.length),
   };
 };
 
@@ -1151,17 +1152,24 @@ const cmdScan = ({ flags, positional }) => {
   const scanned = dirs.toSorted().map(dir => scanProject(dir, printable(path.relative(root, dir) || path.basename(root))));
   const projects = scanned.filter(Boolean);
   const unreadable = unreadableDirs + scanned.length - projects.length;
+  // A single project is named in the header: neither a project heading nor the name on every line, and
+  // no « Sans chantier actif » section, which would only repeat the header's « 0 chantier actif ».
+  const single = projects.length === 1;
+  const named = (name, text) => (single ? text : `${name} : ${text}`);
   const active = projects.flatMap(({ active: list }) => list).toSorted(byDateDesc);
-  const idle = projects.filter(({ active: list }) => list.length === 0).map(({ name }) => name);
+  const idle = single ? [] : projects.filter(({ active: list }) => list.length === 0).map(({ name }) => name);
   const others = projects.filter(({ otherSections }) => otherSections.length > 0)
-    .map(({ name, otherSections }) => `${name} : ${otherSections.join(' · ')}`);
-  const anomalies = projects.flatMap(({ anomalies: list }) => list);
+    .map(({ name, otherSections }) => named(name, otherSections.join(' · ')));
+  const anomalies = projects.flatMap(({ name, anomalies: list }) => list.map(anomaly => named(name, anomaly)));
   const closed = projects.flatMap(({ closed: list }) => list).toSorted(byDateDesc);
-  const shownRoot = root.replace(os.homedir(), '~');
-  const group = Boolean(flags.group);
-  const layout = scanLayout({ short: Boolean(flags.short), group, textMax: scanTextMax() });
+  const shown = dir => printable(dir).replace(os.homedir(), '~');
+  const group = Boolean(flags.group) && !single;
+  const layout = scanLayout({ short: Boolean(flags.short), group, withProject: !group && !single, textMax: scanTextMax() });
   const header = [
-    `Chantiers sous ${shownRoot} (profondeur ${depth}) — ${projects.length} projet${projects.length > 1 ? 's' : ''} suivi${projects.length > 1 ? 's' : ''}, `,
+    // A single project: its path says it all, the scan root, depth and project count add nothing.
+    single
+      ? `Chantiers de ${shown(projects[0].dir)} — `
+      : `Chantiers sous ${shown(root)} (profondeur ${depth}) — ${projects.length} projet${projects.length > 1 ? 's' : ''} suivi${projects.length > 1 ? 's' : ''}, `,
     `${active.length} chantier${active.length > 1 ? 's' : ''} actif${active.length > 1 ? 's' : ''}`,
     unreadable > 0 ? ` · ${unreadable} dossier${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''} ignoré${unreadable > 1 ? 's' : ''}` : '',
   ].join('');

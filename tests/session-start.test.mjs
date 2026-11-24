@@ -68,7 +68,7 @@ test('hook shows the active chantiers of the session project as a systemMessage'
   assert.equal(status, 0);
   assert.equal(stderr, '');
   const text = message(stdout);
-  assert.match(text, /1 projet suivi, 1 chantier actif/);
+  assert.match(text, /^Chantiers de .* — 1 chantier actif\n/);
   assert.match(text, /alpha · maj/);
   assert.match(text, /objectif alpha · étape : 2/);
 });
@@ -87,7 +87,7 @@ test('hook stays at depth 0 by default and passes explicit arguments to scan', t
   const { root, project, run } = sandbox(t);
   project('sous/projet', [['profond', 'objectif profond']]);
   assert.equal(run().stdout, '', 'the session project itself has no tracking');
-  assert.match(message(run([root]).stdout), /sous\/projet · profond/);
+  assert.match(message(run([root]).stdout), /\nprofond · maj/);
 });
 
 test('hook shows anomalies even without an active chantier', t => {

@@ -290,7 +290,8 @@ Dans une session neuve :
 
 `--short` (`-s`) tient chaque chantier sur une ligne (objectif coupé à la largeur) ;
 `--group` (`-g`) range les chantiers sous leur projet, le projet au chantier le plus
-récent en tête.
+récent en tête. Quand un seul projet est trouvé, l'en-tête donne son chemin et les lignes
+ne répètent pas son nom.
 
 Il ne descend ni dans les dossiers cachés ni dans `node_modules`, `vendor`, `venv`, et ne
 suit pas les liens symboliques ; les dossiers illisibles sont comptés, pas listés. Hors

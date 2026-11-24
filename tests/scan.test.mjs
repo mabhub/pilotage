@@ -91,11 +91,13 @@ test('scan falls back on the plan checkpoint date when the index line has none',
   const { project, plan, run } = sandbox(t);
   project('p', { Actifs: [line('sans-maj', 'objectif · étape : 3')] });
   plan('p', 'sans-maj', { lastPoint: daysAgo(5) });
-  assert.match(run().stdout, new RegExp(`p · sans-maj · maj ${daysAgo(5)} \\(5 j\\)`));
+  assert.match(run().stdout, new RegExp(`\\nsans-maj · maj ${daysAgo(5)} \\(5 j\\)`));
 });
 
 test('scan hides closed chantiers unless --clos, and lists idle projects and other sections', t => {
-  const { project, run } = sandbox(t);
+  const { project, plan, run } = sandbox(t);
+  project('actif', { Actifs: [line('en-cours', 'objectif', daysAgo(1))] });
+  plan('actif', 'en-cours');
   project('fini', {
     Actifs: [],
     Clos: [`- [termine](termine/plan.md) — résultat · clos ${daysAgo(3)}`],
@@ -114,8 +116,8 @@ test('scan reports unindexed chantiers and active lines without plan', t => {
   plan('p', 'oublie');
   const { stdout } = run();
   assert.match(stdout, /=== Anomalies ===/);
-  assert.match(stdout, /p : « fantome » actif sans \.pilotage\/fantome\/plan\.md/);
-  assert.match(stdout, /p : chantier « oublie » absent de INDEX\.md/);
+  assert.match(stdout, /\n« fantome » actif sans \.pilotage\/fantome\/plan\.md/);
+  assert.match(stdout, /\nchantier « oublie » absent de INDEX\.md/);
 });
 
 test('scan skips dependencies, hidden folders and symbolic links, and honours --profondeur', t => {
@@ -130,7 +132,7 @@ test('scan skips dependencies, hidden folders and symbolic links, and honours --
   assert.match(all, /n1\/n2\/n3 · d/);
   assert.doesNotMatch(all, /dep|\.cache|lien/);
   const shallow = run(['--profondeur', '2']).stdout;
-  assert.match(shallow, /1 projet suivi/);
+  assert.match(shallow, new RegExp(`^Chantiers de ${path.join(root, 'vrai')} — 1 chantier actif\n`));
   assert.doesNotMatch(shallow, /n1\/n2\/n3/);
 });
 
@@ -142,7 +144,7 @@ test('scan counts unreadable folders and carries on', { skip: process.getuid?.()
   const { status, stdout } = run();
   fs.chmodSync(path.join(root, 'ferme'), 0o700);
   assert.equal(status, 0);
-  assert.match(stdout, /1 projet suivi, 1 chantier actif · 1 dossier illisible ignoré/);
+  assert.match(stdout, new RegExp(`^Chantiers de ${path.join(root, 'ok')} — 1 chantier actif · 1 dossier illisible ignoré\n`));
 });
 
 test('scan refuses a missing folder or an invalid depth', t => {
@@ -203,8 +205,8 @@ test('scan follows a .pilotage link but counts an unreadable index', { skip: pro
   const { status, stdout } = run();
   fs.chmodSync(path.join(root, 'ferme', '.pilotage', 'INDEX.md'), 0o600);
   assert.equal(status, 0);
-  assert.match(stdout, /1 projet suivi, 1 chantier actif · 1 dossier illisible ignoré/);
-  assert.match(stdout, /groupe\/lien · lie/);
+  assert.match(stdout, /^Chantiers de .*\/groupe\/lien — 1 chantier actif · 1 dossier illisible ignoré\n/);
+  assert.match(stdout, /\nlie · maj/);
 });
 
 test('dates follow the local time zone, not UTC', t => {
@@ -221,7 +223,7 @@ test('dates follow the local time zone, not UTC', t => {
   const plan = fs.readFileSync(path.join(project, '.pilotage', 'demo', 'plan.md'), 'utf8');
   assert.match(plan, new RegExp(`\\*\\*Ouvert le\\*\\* : ${local} `));
   s.project('p', { Actifs: [line('demo', 'objectif', local)] });
-  assert.match(s.run([], { TZ: timeZone }).stdout, new RegExp(`p · demo · maj ${local} \\(0 j\\)`));
+  assert.match(s.run([], { TZ: timeZone }).stdout, new RegExp(`\\ndemo · maj ${local} \\(0 j\\)`));
 });
 
 test('scan --short prints one line per chantier, clipped to the width', t => {
@@ -232,7 +234,7 @@ test('scan --short prints one line per chantier, clipped to the width', t => {
   for (const args of [['--short'], ['-s']]) {
     const { status, stdout } = run(args);
     assert.equal(status, 0);
-    assert.match(stdout, new RegExp(`=== Actifs \\(plus récents d'abord\\) ===\\np · a · maj ${daysAgo(1)} \\(1 j\\) · attend : Q2 — objectif court\\np · b · maj [^\\n]*— long x+…\\n?$`));
+    assert.match(stdout, new RegExp(`=== Actifs \\(plus récents d'abord\\) ===\\na · maj ${daysAgo(1)} \\(1 j\\) · attend : Q2 — objectif court\\nb · maj [^\\n]*— long x+…\\n?$`));
     assert.ok(stdout.split('\n').every(row => row.length <= 202), 'lines within SCAN_TEXT_MAX + 2');
   }
 });
@@ -260,4 +262,27 @@ test('scan --group lists chantiers under their project, most active project firs
   ].join('\\n')));
   assert.match(grouped, new RegExp(`=== Clos \\(1, par projet, plus récents d'abord\\) ===\\nalpha \\(1\\)\\n  fini · clos ${daysAgo(30)} — résultat`));
   assert.match(run(['-g', '-s']).stdout, new RegExp(`alpha \\(2\\)\\n  neuf · maj ${daysAgo(1)} \\(1 j\\) — objectif neuf\\n  vieux · [^\\n]*— objectif vieux\\nbeta \\(1\\)\\n  moyen · `));
+});
+
+test('scan names the project instead of the scan root when it finds only one', t => {
+  const { root, project, plan, run } = sandbox(t);
+  project('seul', {
+    Actifs: [line('a', 'objectif', daysAgo(1)), line('b', 'objectif', daysAgo(2))],
+    'À suivre': ['- point libre'],
+  });
+  plan('seul', 'a');
+  plan('seul', 'b');
+  plan('seul', 'oublie');
+  const { stdout } = run();
+  assert.match(stdout, new RegExp(`^Chantiers de ${path.join(root, 'seul')} — 2 chantiers actifs\n`));
+  assert.doesNotMatch(stdout, /profondeur|projet suivi/);
+  assert.match(stdout, new RegExp(`\\na · maj ${daysAgo(1)} \\(1 j\\)\\n  objectif\\nb · maj`), 'no project name on the lines');
+  assert.match(stdout, /=== Autres sections ===\nÀ suivre 1\n/, 'nor on other sections');
+  assert.match(stdout, /=== Anomalies ===\nchantier « oublie » absent de INDEX\.md/, 'nor on anomalies');
+  assert.doesNotMatch(run(['--group']).stdout, /par projet|seul \(2\)/, 'no project heading either');
+  project('calme', { Actifs: [] });
+  const calm = spawnSync(process.execPath, [SCRIPT, 'scan', path.join(root, 'calme')], { encoding: 'utf8' }).stdout;
+  assert.match(calm, /— 0 chantier actif\n?$/, 'no « Sans chantier actif » section repeating the header');
+  const empty = spawnSync(process.execPath, [SCRIPT, 'scan', path.join(root, 'seul', '.pilotage')], { encoding: 'utf8' }).stdout;
+  assert.match(empty, /— 0 projet suivi, 0 chantier actif/, 'no project: the scan root stays');
 });
