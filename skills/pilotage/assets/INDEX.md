@@ -1,6 +1,6 @@
 # Pilotage — {{PROJET}}
 
-Dossier local, exclu de git (`.git/info/exclude`). Reprise : `/pilotage reprise <chantier>`.
+Dossier local, jamais commité. Reprise : `/pilotage reprise <chantier>`.
 
 ## Actifs
 

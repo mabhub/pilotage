@@ -22,6 +22,8 @@ test('titles keep replacement patterns and placeholders verbatim', t => {
   const titre = "Prix $& et $' {{DATE}} toString constructor __proto__";
   const init = run(['init', '--chantier', 'demo', '--titre', titre]);
   assert.equal(init.status, 0, init.stderr);
+  const index = fs.readFileSync(path.join(project, '.pilotage', 'INDEX.md'), 'utf8');
+  assert.match(index.split('\n')[2], /^Dossier local, jamais commité\. /);
   const plan = fs.readFileSync(path.join(project, '.pilotage', 'demo', 'plan.md'), 'utf8');
   assert.equal(plan.split('\n')[0], `# ${titre}`);
   const decision = run(['decision', 'demo', ...titre.split(' ')]);
